@@ -100,16 +100,19 @@ export function AudioCapture({ onAudioReady, disabled }: Props) {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, {
-          type: recorder.mimeType || "audio/webm",
-        });
-        const ext = blob.type.includes("mp4")
+        const rawType = recorder.mimeType || "audio/mp4";
+        const mimeType = rawType.split(";")[0] || "audio/mp4";
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const ext = mimeType.includes("mp4")
           ? "m4a"
-          : blob.type.includes("ogg")
+          : mimeType.includes("ogg")
             ? "ogg"
-            : "webm";
+            : mimeType.includes("webm")
+              ? "webm"
+              : "m4a";
+        // Avoid empty/invalid type — Safari throws "did not match the expected pattern"
         const file = new File([blob], `recording-${Date.now()}.${ext}`, {
-          type: blob.type,
+          type: mimeType || "audio/mp4",
         });
         const url = URL.createObjectURL(blob);
         previewUrlRef.current = url;

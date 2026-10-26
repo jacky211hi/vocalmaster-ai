@@ -18,15 +18,55 @@ import { createClient } from "@/lib/supabase/client";
 
 function extForFile(file: File): string {
   const name = file.name.toLowerCase();
-  if (name.endsWith(".mp3")) return "mp3";
-  if (name.endsWith(".m4a") || name.endsWith(".mp4")) return "m4a";
-  if (name.endsWith(".wav")) return "wav";
-  if (name.endsWith(".ogg")) return "ogg";
-  if (file.type.includes("mpeg")) return "mp3";
-  if (file.type.includes("mp4") || file.type.includes("m4a")) return "m4a";
-  if (file.type.includes("wav")) return "wav";
-  if (file.type.includes("ogg")) return "ogg";
-  return "webm";
+  const type = (file.type || "").toLowerCase();
+  if (name.endsWith(".mp3") || type.includes("mpeg")) return "mp3";
+  if (
+    name.endsWith(".m4a") ||
+    name.endsWith(".mp4") ||
+    type.includes("mp4") ||
+    type.includes("m4a") ||
+    type.includes("aac")
+  )
+    return "m4a";
+  if (name.endsWith(".wav") || type.includes("wav")) return "wav";
+  if (name.endsWith(".ogg") || type.includes("ogg")) return "ogg";
+  if (name.endsWith(".webm") || type.includes("webm")) return "webm";
+  // iPhone Safari often records as mp4/m4a with empty type
+  return "m4a";
+}
+
+function mimeForExt(ext: string, fileType: string): string {
+  if (fileType && fileType !== "application/octet-stream") return fileType;
+  if (ext === "mp3") return "audio/mpeg";
+  if (ext === "m4a") return "audio/mp4";
+  if (ext === "wav") return "audio/wav";
+  if (ext === "ogg") return "audio/ogg";
+  if (ext === "webm") return "audio/webm";
+  return "audio/mp4";
+}
+
+function newId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function friendlyError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (
+    /did not match the expected pattern/i.test(msg) ||
+    /string did not match/i.test(msg)
+  ) {
+    return "上傳失敗（常見於 iPhone／大檔案）。請用較短錄音（建議 1 分鐘內）再試一次。";
+  }
+  if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+    return "網絡中斷或上傳超時，請檢查 Wi‑Fi／流動數據後再試。";
+  }
+  if (/Payload Too Large|413|body.*limit/i.test(msg)) {
+    return "檔案太大。請上傳較短錄音（建議少於 4MB／約 1 分鐘）。";
+  }
+  return msg || "分析失敗，請稍後再試";
 }
 
 export default function SingPage() {
@@ -69,13 +109,17 @@ export default function SingPage() {
       }
 
       const ext = extForFile(audioFile);
-      uploadedPath = `${user.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      const mimeType = mimeForExt(ext, audioFile.type);
+      uploadedPath = `${user.id}/${Date.now()}-${newId()}.${ext}`;
 
       setStatus(`上傳音訊中…（${(audioFile.size / 1024 / 1024).toFixed(1)} MB）`);
+
+      // ArrayBuffer upload is more reliable on iOS Safari than File/Blob directly
+      const bytes = await audioFile.arrayBuffer();
       const { error: uploadError } = await supabase.storage
         .from("recordings")
-        .upload(uploadedPath, audioFile, {
-          contentType: audioFile.type || `audio/${ext}`,
+        .upload(uploadedPath, bytes, {
+          contentType: mimeType,
           upsert: false,
         });
 
@@ -92,13 +136,13 @@ export default function SingPage() {
           song_name: songName.trim(),
           artist: artist.trim(),
           storage_path: uploadedPath,
-          mime_type: audioFile.type || `audio/${ext}`,
+          mime_type: mimeType,
         }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || "分析失敗");
+        throw new Error(data.error || `分析失敗（HTTP ${res.status}）`);
       }
 
       uploadedPath = null; // server owns cleanup / keep
@@ -113,7 +157,7 @@ export default function SingPage() {
           // ignore
         }
       }
-      setError(err instanceof Error ? err.message : "分析失敗");
+      setError(friendlyError(err));
       setStatus(null);
     } finally {
       setLoading(false);
