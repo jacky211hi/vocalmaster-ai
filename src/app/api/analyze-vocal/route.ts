@@ -7,6 +7,9 @@ import {
   scoreQualifiesForTopN,
 } from "@/lib/prune-recordings";
 
+// Hobby plan allows up to 60s; Gemini audio analysis needs the full window
+export const maxDuration = 60;
+
 const ALLOWED_MIME = new Set([
   "audio/mpeg",
   "audio/mp3",
@@ -32,7 +35,14 @@ function normalizeMime(mime: string, filename: string): string {
   return mime || "audio/webm";
 }
 
+/**
+ * Expects JSON body after client already uploaded audio to Supabase Storage:
+ * { song_name, artist, storage_path, mime_type? }
+ * Avoids Vercel 4.5MB request body limit (phone uploads often exceed it).
+ */
 export async function POST(request: Request) {
+  let storagePathToCleanup: string | null = null;
+
   try {
     const supabase = await createClient();
     const {
@@ -43,23 +53,56 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const form = await request.formData();
-    const songName = String(form.get("song_name") ?? "").trim();
-    const artist = String(form.get("artist") ?? "").trim();
-    const file = form.get("audio");
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "無效請求" }, { status: 400 });
+    }
+
+    const songName = String(body.song_name ?? "").trim();
+    const artist = String(body.artist ?? "").trim();
+    const storagePath = String(body.storage_path ?? "").trim();
+    const mimeType = normalizeMime(
+      String(body.mime_type ?? ""),
+      storagePath
+    );
 
     if (!songName) {
       return NextResponse.json({ error: "請輸入歌名" }, { status: 400 });
     }
-    if (!(file instanceof File) || file.size === 0) {
-      return NextResponse.json({ error: "請提供錄音檔" }, { status: 400 });
+    if (!storagePath) {
+      return NextResponse.json({ error: "缺少音訊路徑" }, { status: 400 });
     }
-    if (file.size > 20 * 1024 * 1024) {
+    // Only allow paths under this user's folder
+    if (
+      !storagePath.startsWith(`${user.id}/`) ||
+      storagePath.includes("..")
+    ) {
+      return NextResponse.json({ error: "無效的音訊路徑" }, { status: 403 });
+    }
+
+    storagePathToCleanup = storagePath;
+
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from("recordings")
+      .download(storagePath);
+
+    if (downloadError || !fileData) {
+      console.error("Storage download error:", downloadError);
+      return NextResponse.json(
+        { error: `讀取音訊失敗：${downloadError?.message ?? "unknown"}` },
+        { status: 500 }
+      );
+    }
+
+    const buffer = Buffer.from(await fileData.arrayBuffer());
+    if (buffer.length === 0) {
+      return NextResponse.json({ error: "音訊檔是空的" }, { status: 400 });
+    }
+    if (buffer.length > 20 * 1024 * 1024) {
+      await supabase.storage.from("recordings").remove([storagePath]);
       return NextResponse.json({ error: "檔案請小於 20MB" }, { status: 400 });
     }
 
-    const mimeType = normalizeMime(file.type, file.name);
-    const buffer = Buffer.from(await file.arrayBuffer());
     const audioBase64 = buffer.toString("base64");
 
     const analysis = await analyzeVocalAudio({
@@ -69,7 +112,6 @@ export async function POST(request: Request) {
       artist,
     });
 
-    // Only keep audio files for personal top-N scores
     const { data: existingRows } = await supabase
       .from("recordings")
       .select("total_score")
@@ -84,43 +126,19 @@ export async function POST(request: Request) {
       PERSONAL_TOP_N
     );
 
-    let objectPath: string | null = null;
+    let objectPath: string | null = storagePath;
     let audioUrl = "";
 
     if (keepAudio) {
-      const ext =
-        mimeType.includes("mpeg") || file.name.toLowerCase().endsWith(".mp3")
-          ? "mp3"
-          : mimeType.includes("mp4") || file.name.toLowerCase().endsWith(".m4a")
-            ? "m4a"
-            : mimeType.includes("wav")
-              ? "wav"
-              : mimeType.includes("ogg")
-                ? "ogg"
-                : "webm";
-
-      objectPath = `${user.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("recordings")
-        .upload(objectPath, buffer, {
-          contentType: mimeType,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Storage upload error:", uploadError);
-        return NextResponse.json(
-          { error: `上傳失敗：${uploadError.message}` },
-          { status: 500 }
-        );
-      }
-
       const { data: signed } = await supabase.storage
         .from("recordings")
-        .createSignedUrl(objectPath, 60 * 60 * 24 * 365);
-
-      audioUrl = signed?.signedUrl ?? objectPath;
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+      audioUrl = signed?.signedUrl ?? storagePath;
+      storagePathToCleanup = null; // keep file
+    } else {
+      await supabase.storage.from("recordings").remove([storagePath]);
+      objectPath = null;
+      storagePathToCleanup = null;
     }
 
     const { data: recording, error: insertError } = await supabase
@@ -144,7 +162,6 @@ export async function POST(request: Request) {
 
     if (insertError || !recording) {
       console.error("DB insert error:", insertError);
-      // Roll back orphaned upload if DB insert failed
       if (objectPath) {
         await supabase.storage.from("recordings").remove([objectPath]);
       }
@@ -154,7 +171,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Drop anything outside personal top N (keep this result viewable once)
     await pruneUserRecordingsToTopN(supabase, user.id, {
       protectId: recording.id,
       topN: PERSONAL_TOP_N,
@@ -167,6 +183,16 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     console.error("analyze-vocal error:", err);
+    if (storagePathToCleanup) {
+      try {
+        const supabase = await createClient();
+        await supabase.storage
+          .from("recordings")
+          .remove([storagePathToCleanup]);
+      } catch {
+        // ignore cleanup errors
+      }
+    }
     const message =
       err instanceof Error ? err.message : "分析失敗，請稍後再試";
     const busy =
