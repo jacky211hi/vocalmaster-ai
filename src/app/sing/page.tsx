@@ -127,7 +127,7 @@ export default function SingPage() {
         throw new Error(`上傳失敗：${uploadError.message}`);
       }
 
-      setStatus("上傳完成，AI 教練分析中（可能需要 30–60 秒）…");
+      setStatus("建立分析任務…");
 
       const res = await fetch("/api/analyze-vocal", {
         method: "POST",
@@ -142,11 +142,11 @@ export default function SingPage() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || `分析失敗（HTTP ${res.status}）`);
+        throw new Error(data.error || `建立失敗（HTTP ${res.status}）`);
       }
 
       uploadedPath = null; // server owns cleanup / keep
-      setStatus("分析完成，跳轉結果頁…");
+      setStatus("跳轉結果頁，AI 將開始分析…");
       router.push(`/result/${data.id}`);
     } catch (err) {
       if (uploadedPath) {

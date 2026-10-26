@@ -12,8 +12,10 @@ import {
   CommentsSection,
   type CommentItem,
 } from "@/components/comments-section";
+import { AnalysisRunner } from "@/components/analysis-runner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { isAnalyzingFeedback } from "@/lib/analysis-status";
 import type { Recording } from "@/lib/types";
 
 export default async function ResultPage({
@@ -43,6 +45,7 @@ export default async function ResultPage({
   if (error || !data) notFound();
   const recording = data as Recording;
   const isOwner = recording.user_id === user.id;
+  const analyzing = isAnalyzingFeedback(recording.ai_feedback_md);
 
   const scores = {
     timbre_score: recording.timbre_score,
@@ -121,79 +124,92 @@ export default async function ResultPage({
               Total Score
             </p>
             <p className="font-[family-name:var(--font-display)] text-5xl text-amber-300">
-              {recording.total_score}
+              {analyzing ? "…" : recording.total_score}
             </p>
           </div>
         </div>
 
-        {recording.audio_url ? (
+        {analyzing && isOwner ? (
+          <AnalysisRunner recordingId={recording.id} />
+        ) : analyzing ? (
           <Card className="mb-6">
-            <CardContent className="py-4">
-              <audio src={recording.audio_url} controls className="w-full" />
+            <CardContent className="py-8 text-center text-white/55">
+              AI 分析進行中，請稍後刷新頁面。
             </CardContent>
           </Card>
         ) : (
-          <Card className="mb-6 border-dashed border-white/15">
-            <CardContent className="py-4 text-sm text-white/50">
-              此錄音未進入個人 Top 10，音檔未保存；分數與 AI 分析報告仍然保留。
-            </CardContent>
-          </Card>
+          <>
+            {recording.audio_url ? (
+              <Card className="mb-6">
+                <CardContent className="py-4">
+                  <audio src={recording.audio_url} controls className="w-full" />
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="mb-6 border-dashed border-white/15">
+                <CardContent className="py-4 text-sm text-white/50">
+                  此錄音未進入個人 Top 10，音檔未保存；分數與 AI
+                  分析報告仍然保留。
+                </CardContent>
+              </Card>
+            )}
+
+            <div className="mb-6 grid gap-6 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>四維雷達圖</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScoreRadar scores={scores} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>分項評分</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScoreBars scores={scores} />
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="mb-6 border-amber-400/25 bg-gradient-to-br from-amber-400/10 via-white/[0.03] to-transparent">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-200">
+                  <Lightbulb className="h-5 w-5" />
+                  Actionable Advice · 改善建議
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="prose-vocal">
+                  <ReactMarkdown>
+                    {recording.actionable_advice || "暫無具體練習建議。"}
+                  </ReactMarkdown>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>AI 診斷報告</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="prose-vocal">
+                  <ReactMarkdown>
+                    {recording.ai_feedback_md || "暫無詳細報告。"}
+                  </ReactMarkdown>
+                </div>
+              </CardContent>
+            </Card>
+
+            <CommentsSection
+              recordingId={recording.id}
+              currentUserId={user.id}
+              isRecordingOwner={isOwner}
+              initialComments={comments}
+            />
+          </>
         )}
-
-        <div className="mb-6 grid gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>四維雷達圖</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScoreRadar scores={scores} />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>分項評分</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScoreBars scores={scores} />
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="mb-6 border-amber-400/25 bg-gradient-to-br from-amber-400/10 via-white/[0.03] to-transparent">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-amber-200">
-              <Lightbulb className="h-5 w-5" />
-              Actionable Advice · 改善建議
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="prose-vocal">
-              <ReactMarkdown>
-                {recording.actionable_advice || "暫無具體練習建議。"}
-              </ReactMarkdown>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>AI 診斷報告</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="prose-vocal">
-              <ReactMarkdown>
-                {recording.ai_feedback_md || "暫無詳細報告。"}
-              </ReactMarkdown>
-            </div>
-          </CardContent>
-        </Card>
-
-        <CommentsSection
-          recordingId={recording.id}
-          currentUserId={user.id}
-          isRecordingOwner={isOwner}
-          initialComments={comments}
-        />
       </main>
     </div>
   );

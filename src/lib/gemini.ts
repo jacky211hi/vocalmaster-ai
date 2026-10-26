@@ -1,41 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 import type { VocalAnalysisResult } from "@/lib/types";
 
-const SYSTEM_INSTRUCTION = `You are a strict but encouraging professional vocal coach for the app "VocalMaster AI (AI 聲樂教練)".
+const SYSTEM_INSTRUCTION = `You are a strict but encouraging professional vocal coach for "VocalMaster AI (AI 聲樂教練)".
 
-Listen carefully to the native audio recording and evaluate the singer on FOUR dimensions (each 0–100 integers):
-1. Timbre (音色) — tone color, resonance, brightness/darkness balance
-2. Mechanism (發聲機制) — registration (chest/mix/head), laryngeal position, soft palate, twang/edge phonation, jaw/tongue freedom
-3. Breath (呼吸) — support, phrasing, air management, onset control
-4. Pitch (音準) — intonation accuracy, stability, intentional stylistic bends
+Evaluate the singing on FOUR dimensions (0–100 ints): Timbre, Mechanism, Breath, Pitch.
+Give brief physiological feedback and 1–2 specific exercises (e.g. Twang/puppy sound, lip trill, "ma").
+Write detailed_feedback and actionable_advice in Traditional Chinese Markdown.
+Keep the report concise (under ~400 Chinese characters for detailed_feedback) so analysis stays fast.
 
-Provide physiological feedback (e.g. laryngeal tension, soft palate lift, thyroid tilt, breath anchoring).
+Return ONLY JSON:
+{"total_score":int,"timbre_score":int,"mechanism_score":int,"breath_score":int,"pitch_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
 
-Actionable Training Generator: output 1–2 highly specific vocal exercises tailored to the detected flaws. Examples of the style expected:
-- Sing the bridge with a crying puppy "Twang / 咽音" (鳴鳴) to improve edge phonation
-- Use a lip trill or "ma" consonant to release jaw tension / lower larynx before the chorus
-
-Write detailed_feedback and actionable_advice in Traditional Chinese (繁體中文), using Markdown.
-total_score should be a thoughtful weighted overall (not a naive average if one dimension is critically weak).
-
-Return ONLY valid JSON matching this schema (no markdown fences):
-{
-  "total_score": int,
-  "timbre_score": int,
-  "mechanism_score": int,
-  "breath_score": int,
-  "pitch_score": int,
-  "detailed_feedback": "markdown string",
-  "actionable_advice": "markdown string"
-}`;
-
-const FALLBACK_MODELS = [
-  "gemini-3.8-flash",
-  "gemini-3.7-flash",
-  "gemini-3.6-flash",
-  "gemini-flash-latest",
-  "gemini-3.5-flash",
-];
+const FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash"];
 
 function clampScore(n: unknown): number {
   const v = typeof n === "number" ? n : Number(n);
@@ -73,13 +49,18 @@ function isRetryableError(err: unknown): boolean {
     msg.includes("high demand") ||
     msg.includes("429") ||
     msg.includes("RESOURCE_EXHAUSTED") ||
-    msg.includes("overloaded")
+    msg.includes("overloaded") ||
+    msg.includes("DEADLINE") ||
+    msg.includes("timeout")
   );
 }
 
 function modelCandidates(): string[] {
   const preferred = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
-  return [preferred, ...FALLBACK_MODELS.filter((m) => m !== preferred)];
+  return [preferred, ...FALLBACK_MODELS.filter((m) => m !== preferred)].slice(
+    0,
+    2
+  );
 }
 
 export async function analyzeVocalAudio(params: {
@@ -97,7 +78,7 @@ export async function analyzeVocalAudio(params: {
   const userPrompt = `Song: ${params.songName}
 Artist: ${params.artist || "Unknown"}
 
-Please analyze this singing recording and return the structured JSON evaluation.`;
+Analyze this singing clip and return the JSON evaluation. Be concise.`;
 
   const contents = [
     {
@@ -117,13 +98,14 @@ Please analyze this singing recording and return the structured JSON evaluation.
   const config = {
     systemInstruction: SYSTEM_INSTRUCTION,
     responseMimeType: "application/json",
-    temperature: 0.4,
+    temperature: 0.3,
   };
 
   let lastError: unknown;
 
+  // Keep attempts low — Vercel Hobby times out around 60s (504)
   for (const model of modelCandidates()) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const response = await ai.models.generateContent({
           model,
@@ -144,21 +126,15 @@ Please analyze this singing recording and return the structured JSON evaluation.
           err instanceof Error ? err.message : err
         );
 
-        if (!isRetryableError(err)) {
-          // Non-retryable for this model (e.g. 404) — try next model
-          break;
-        }
-
-        if (attempt < 3) {
-          await sleep(1000 * attempt * attempt); // 1s, 4s
-        }
+        if (!isRetryableError(err)) break;
+        if (attempt < 2) await sleep(800);
       }
     }
   }
 
   if (isRetryableError(lastError)) {
     throw new Error(
-      "Gemini 目前繁忙（高用量），已自動重試多次仍失敗。請稍後再試，或改 .env.local 的 GEMINI_MODEL。"
+      "Gemini 目前繁忙或逾時。請稍後再試，或改用較短錄音（15–45 秒）。"
     );
   }
 
