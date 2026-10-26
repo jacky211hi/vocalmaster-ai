@@ -33,21 +33,23 @@ export function Navbar({
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b1220]/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/30">
-            <Mic2 className="h-5 w-5" />
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b1220]/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-3 sm:h-16 sm:gap-3 sm:px-6">
+        <Link href="/dashboard" className="flex shrink-0 items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/30 sm:h-9 sm:w-9">
+            <Mic2 className="h-4 w-4 sm:h-5 sm:w-5" />
           </span>
-          <div className="leading-tight">
-            <p className="font-[family-name:var(--font-display)] text-lg tracking-tight text-white">
+          <div className="hidden leading-tight min-[400px]:block">
+            <p className="font-[family-name:var(--font-display)] text-base tracking-tight text-white sm:text-lg">
               VocalMaster AI
             </p>
-            <p className="text-[11px] text-amber-200/70">AI 聲樂教練</p>
+            <p className="text-[10px] text-amber-200/70 sm:text-[11px]">
+              AI 聲樂教練
+            </p>
           </div>
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="mx-auto flex items-center gap-0.5 sm:gap-1">
           {links.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
@@ -55,7 +57,7 @@ export function Navbar({
               title={label}
               aria-label={label}
               className={cn(
-                "flex h-10 w-10 items-center justify-center rounded-xl transition",
+                "flex h-10 w-10 items-center justify-center rounded-xl transition sm:h-10 sm:w-10",
                 pathname.startsWith(href)
                   ? "bg-white/10 text-white"
                   : "text-white/55 hover:bg-white/5 hover:text-white"
@@ -66,12 +68,12 @@ export function Navbar({
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           {username && (
             <Link
               href="/profile"
               className={cn(
-                "flex max-w-[10rem] items-center gap-2 truncate rounded-xl px-2 py-1 text-sm transition sm:max-w-[14rem]",
+                "flex items-center gap-2 rounded-xl px-1.5 py-1 text-sm transition sm:max-w-[14rem] sm:px-2",
                 pathname.startsWith("/profile")
                   ? "bg-white/10 text-white"
                   : "text-white/60 hover:bg-white/5 hover:text-white"
@@ -83,12 +85,18 @@ export function Navbar({
                 username={username}
                 size={28}
               />
-              <span className="truncate">{username}</span>
+              <span className="hidden truncate sm:inline">{username}</span>
             </Link>
           )}
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10"
+            onClick={handleLogout}
+            aria-label="登出"
+            title="登出"
+          >
             <LogOut className="h-4 w-4" />
-            <span className="hidden sm:inline">登出</span>
           </Button>
         </div>
       </div>
