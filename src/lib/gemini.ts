@@ -11,7 +11,14 @@ Keep the report concise (under ~400 Chinese characters for detailed_feedback) so
 Return ONLY JSON:
 {"total_score":int,"timbre_score":int,"mechanism_score":int,"breath_score":int,"pitch_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
 
-const FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash"];
+/** Prefer rotating models quickly on 503 rather than long sleeps (Vercel ~60s cap). */
+const FALLBACK_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-flash-latest",
+  "gemini-3.7-flash",
+  "gemini-3.5-flash",
+  "gemini-3.6-flash",
+];
 
 function clampScore(n: unknown): number {
   const v = typeof n === "number" ? n : Number(n);
@@ -41,8 +48,12 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function isRetryableError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errMessage(err);
   return (
     msg.includes("503") ||
     msg.includes("UNAVAILABLE") ||
@@ -57,10 +68,7 @@ function isRetryableError(err: unknown): boolean {
 
 function modelCandidates(): string[] {
   const preferred = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
-  return [preferred, ...FALLBACK_MODELS.filter((m) => m !== preferred)].slice(
-    0,
-    2
-  );
+  return [preferred, ...FALLBACK_MODELS.filter((m) => m !== preferred)];
 }
 
 export async function analyzeVocalAudio(params: {
@@ -101,40 +109,56 @@ Analyze this singing clip and return the JSON evaluation. Be concise.`;
     temperature: 0.3,
   };
 
+  const tried: string[] = [];
   let lastError: unknown;
+  const models = modelCandidates();
 
-  // Keep attempts low — Vercel Hobby times out around 60s (504)
-  for (const model of modelCandidates()) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents,
-          config,
-        });
-
-        const text = response.text;
-        if (!text) {
-          throw new Error("Gemini returned an empty response");
-        }
-
-        return parseAnalysis(text);
-      } catch (err) {
-        lastError = err;
-        console.warn(
-          `[gemini] ${model} attempt ${attempt} failed:`,
-          err instanceof Error ? err.message : err
-        );
-
-        if (!isRetryableError(err)) break;
-        if (attempt < 2) await sleep(800);
+  // Strategy: try each model once quickly on busy errors (no long backoff).
+  // If all busy, one short pause then retry preferred model once more.
+  for (const model of models) {
+    try {
+      tried.push(model);
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config,
+      });
+      const text = response.text;
+      if (!text) throw new Error("Gemini returned an empty response");
+      return parseAnalysis(text);
+    } catch (err) {
+      lastError = err;
+      console.warn(`[gemini] ${model} failed:`, errMessage(err));
+      if (!isRetryableError(err)) {
+        // e.g. 404 model — skip to next candidate
+        continue;
       }
+      // brief gap only between models
+      await sleep(400);
     }
+  }
+
+  // One last shot on preferred after a short cool-down
+  const preferred = models[0];
+  try {
+    tried.push(`${preferred}#retry`);
+    await sleep(1200);
+    const response = await ai.models.generateContent({
+      model: preferred,
+      contents,
+      config,
+    });
+    const text = response.text;
+    if (!text) throw new Error("Gemini returned an empty response");
+    return parseAnalysis(text);
+  } catch (err) {
+    lastError = err;
+    console.warn(`[gemini] final retry failed:`, errMessage(err));
   }
 
   if (isRetryableError(lastError)) {
     throw new Error(
-      "Gemini 目前繁忙或逾時。請稍後再試，或改用較短錄音（15–45 秒）。"
+      `Gemini 目前繁忙（已試：${tried.join(" → ")}）。呢個係 Google 端暫時爆量，同你檔案長度無關；等一兩分鐘再撳「重試分析」通常得。`
     );
   }
 
