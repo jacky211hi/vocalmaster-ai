@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,20 @@ export function AnalysisRunner({ recordingId }: { recordingId: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(true);
+  const startedRef = useRef(false);
 
-  async function runAnalysis() {
+  async function runAnalysis(manual = false) {
+    const lockKey = `vocal-analyze-lock:${recordingId}`;
+    if (!manual && typeof sessionStorage !== "undefined") {
+      if (sessionStorage.getItem(lockKey) === "1") {
+        // Already auto-started this session — wait for user to tap retry
+        setRunning(false);
+        setError("分析已觸發過。如果未完成，請撳下面重試（注意免費額度有限）。");
+        return;
+      }
+      sessionStorage.setItem(lockKey, "1");
+    }
+
     setRunning(true);
     setError(null);
     try {
@@ -29,6 +41,9 @@ export function AnalysisRunner({ recordingId }: { recordingId: string }) {
               : `分析失敗（HTTP ${res.status}）`)
         );
       }
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.removeItem(lockKey);
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "分析失敗");
@@ -37,7 +52,9 @@ export function AnalysisRunner({ recordingId }: { recordingId: string }) {
   }
 
   useEffect(() => {
-    void runAnalysis();
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void runAnalysis(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingId]);
 
@@ -57,7 +74,7 @@ export function AnalysisRunner({ recordingId }: { recordingId: string }) {
         ) : (
           <>
             <p className="text-sm text-rose-200">{error}</p>
-            <Button type="button" onClick={() => void runAnalysis()}>
+            <Button type="button" onClick={() => void runAnalysis(true)}>
               <RefreshCw className="h-4 w-4" />
               重試分析
             </Button>

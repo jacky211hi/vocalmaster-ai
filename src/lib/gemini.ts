@@ -11,14 +11,8 @@ Keep the report concise (under ~400 Chinese characters for detailed_feedback) so
 Return ONLY JSON:
 {"total_score":int,"timbre_score":int,"mechanism_score":int,"breath_score":int,"pitch_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
 
-/** Prefer rotating models quickly on 503 rather than long sleeps (Vercel ~60s cap). */
-const FALLBACK_MODELS = [
-  "gemini-3.8-flash",
-  "gemini-flash-latest",
-  "gemini-3.7-flash",
-  "gemini-3.5-flash",
-  "gemini-3.6-flash",
-];
+/** Keep list short — free tier is ~20 RPD; each try counts. */
+const FALLBACK_MODELS = ["gemini-flash-latest", "gemini-3.6-flash"];
 
 function clampScore(n: unknown): number {
   const v = typeof n === "number" ? n : Number(n);
@@ -52,23 +46,36 @@ function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function isRetryableError(err: unknown): boolean {
+/** Daily / minute quota — do NOT keep firing more requests. */
+function isQuotaError(err: unknown): boolean {
+  const msg = errMessage(err);
+  return (
+    msg.includes("429") ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("quota") ||
+    msg.includes("Quota") ||
+    msg.includes("rate limit") ||
+    msg.includes("Rate limit")
+  );
+}
+
+function isBusyError(err: unknown): boolean {
   const msg = errMessage(err);
   return (
     msg.includes("503") ||
     msg.includes("UNAVAILABLE") ||
     msg.includes("high demand") ||
-    msg.includes("429") ||
-    msg.includes("RESOURCE_EXHAUSTED") ||
-    msg.includes("overloaded") ||
-    msg.includes("DEADLINE") ||
-    msg.includes("timeout")
+    msg.includes("overloaded")
   );
 }
 
 function modelCandidates(): string[] {
   const preferred = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
-  return [preferred, ...FALLBACK_MODELS.filter((m) => m !== preferred)];
+  // At most 2 models total per user analysis (protect free-tier RPD)
+  return [preferred, ...FALLBACK_MODELS.filter((m) => m !== preferred)].slice(
+    0,
+    2
+  );
 }
 
 export async function analyzeVocalAudio(params: {
@@ -111,11 +118,8 @@ Analyze this singing clip and return the JSON evaluation. Be concise.`;
 
   const tried: string[] = [];
   let lastError: unknown;
-  const models = modelCandidates();
 
-  // Strategy: try each model once quickly on busy errors (no long backoff).
-  // If all busy, one short pause then retry preferred model once more.
-  for (const model of models) {
+  for (const model of modelCandidates()) {
     try {
       tried.push(model);
       const response = await ai.models.generateContent({
@@ -129,36 +133,26 @@ Analyze this singing clip and return the JSON evaluation. Be concise.`;
     } catch (err) {
       lastError = err;
       console.warn(`[gemini] ${model} failed:`, errMessage(err));
-      if (!isRetryableError(err)) {
-        // e.g. 404 model — skip to next candidate
+
+      if (isQuotaError(err)) {
+        throw new Error(
+          `Gemini 免費額度已用完（今日請求上限）。你嘅 dashboard 顯示大約 20 次／日；每次分析／重試／換 model 都會計入。請等額度重置，或升級 Google AI 計劃。`
+        );
+      }
+
+      if (isBusyError(err)) {
+        await sleep(500);
         continue;
       }
-      // brief gap only between models
-      await sleep(400);
+
+      // Non-retryable for this model (e.g. 404) — try next
+      continue;
     }
   }
 
-  // One last shot on preferred after a short cool-down
-  const preferred = models[0];
-  try {
-    tried.push(`${preferred}#retry`);
-    await sleep(1200);
-    const response = await ai.models.generateContent({
-      model: preferred,
-      contents,
-      config,
-    });
-    const text = response.text;
-    if (!text) throw new Error("Gemini returned an empty response");
-    return parseAnalysis(text);
-  } catch (err) {
-    lastError = err;
-    console.warn(`[gemini] final retry failed:`, errMessage(err));
-  }
-
-  if (isRetryableError(lastError)) {
+  if (isBusyError(lastError)) {
     throw new Error(
-      `Gemini 目前繁忙（已試：${tried.join(" → ")}）。呢個係 Google 端暫時爆量，同你檔案長度無關；等一兩分鐘再撳「重試分析」通常得。`
+      `Gemini 暫時繁忙（已試 ${tried.join("、")}，各 1 次）。請等一分鐘再撳「重試分析」。`
     );
   }
 
