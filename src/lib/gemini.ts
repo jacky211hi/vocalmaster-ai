@@ -11,8 +11,20 @@ Keep the report concise (under ~400 Chinese characters for detailed_feedback) so
 Return ONLY JSON:
 {"total_score":int,"timbre_score":int,"mechanism_score":int,"breath_score":int,"pitch_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
 
-/** Keep list short — free tier is ~20 RPD; each try counts. */
-const FALLBACK_MODELS = ["gemini-flash-latest", "gemini-3.6-flash"];
+/**
+ * Ordered fallback pool. Free-tier quotas are usually per-model,
+ * so when one hits RPD/RPM we switch to the next.
+ *
+ * Note: "Antigravity" is a Google agent product, not a generateContent
+ * chat model — it cannot replace Gemini Flash for audio analysis.
+ */
+const DEFAULT_MODEL_POOL = [
+  "gemini-3.6-flash",
+  "gemini-flash-latest",
+  "gemini-3.5-flash",
+  "gemini-3.7-flash",
+  "gemini-3.8-flash",
+];
 
 function clampScore(n: unknown): number {
   const v = typeof n === "number" ? n : Number(n);
@@ -46,16 +58,13 @@ function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Daily / minute quota — do NOT keep firing more requests. */
 function isQuotaError(err: unknown): boolean {
   const msg = errMessage(err);
   return (
     msg.includes("429") ||
     msg.includes("RESOURCE_EXHAUSTED") ||
-    msg.includes("quota") ||
-    msg.includes("Quota") ||
-    msg.includes("rate limit") ||
-    msg.includes("Rate limit")
+    /quota/i.test(msg) ||
+    /rate limit/i.test(msg)
   );
 }
 
@@ -69,13 +78,39 @@ function isBusyError(err: unknown): boolean {
   );
 }
 
-function modelCandidates(): string[] {
-  const preferred = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
-  // At most 2 models total per user analysis (protect free-tier RPD)
-  return [preferred, ...FALLBACK_MODELS.filter((m) => m !== preferred)].slice(
-    0,
-    2
+function isMissingModelError(err: unknown): boolean {
+  const msg = errMessage(err);
+  return (
+    msg.includes("404") ||
+    msg.includes("NOT_FOUND") ||
+    msg.includes("no longer available") ||
+    msg.includes("is not found")
   );
+}
+
+/** Build ordered unique list: preferred → env fallbacks → defaults */
+function modelCandidates(): string[] {
+  const preferred = process.env.GEMINI_MODEL?.trim();
+  const fromEnv = (process.env.GEMINI_MODEL_FALLBACKS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const ordered = [
+    ...(preferred ? [preferred] : []),
+    ...fromEnv,
+    ...DEFAULT_MODEL_POOL,
+  ];
+
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const m of ordered) {
+    if (seen.has(m)) continue;
+    seen.add(m);
+    unique.push(m);
+  }
+  // Cap attempts so one user action doesn't burn entire free tier
+  return unique.slice(0, 4);
 }
 
 export async function analyzeVocalAudio(params: {
@@ -116,10 +151,13 @@ Analyze this singing clip and return the JSON evaluation. Be concise.`;
     temperature: 0.3,
   };
 
+  const models = modelCandidates();
   const tried: string[] = [];
+  const quotaHit: string[] = [];
+  const busyHit: string[] = [];
   let lastError: unknown;
 
-  for (const model of modelCandidates()) {
+  for (const model of models) {
     try {
       tried.push(model);
       const response = await ai.models.generateContent({
@@ -129,34 +167,50 @@ Analyze this singing clip and return the JSON evaluation. Be concise.`;
       });
       const text = response.text;
       if (!text) throw new Error("Gemini returned an empty response");
+      console.info(`[gemini] success with model=${model}`);
       return parseAnalysis(text);
     } catch (err) {
       lastError = err;
-      console.warn(`[gemini] ${model} failed:`, errMessage(err));
+      const msg = errMessage(err);
+      console.warn(`[gemini] ${model} failed:`, msg);
 
       if (isQuotaError(err)) {
-        throw new Error(
-          `Gemini 免費額度已用完（今日請求上限）。你嘅 dashboard 顯示大約 20 次／日；每次分析／重試／換 model 都會計入。請等額度重置，或升級 Google AI 計劃。`
-        );
-      }
-
-      if (isBusyError(err)) {
-        await sleep(500);
+        // This model is over limit — switch to next available model
+        quotaHit.push(model);
+        await sleep(200);
         continue;
       }
 
-      // Non-retryable for this model (e.g. 404) — try next
+      if (isBusyError(err)) {
+        busyHit.push(model);
+        await sleep(400);
+        continue;
+      }
+
+      if (isMissingModelError(err)) {
+        continue;
+      }
+
+      // Unknown error — still try next model once
       continue;
     }
   }
 
-  if (isBusyError(lastError)) {
+  if (quotaHit.length > 0 && quotaHit.length === tried.length) {
     throw new Error(
-      `Gemini 暫時繁忙（已試 ${tried.join("、")}，各 1 次）。請等一分鐘再撳「重試分析」。`
+      `所有試過嘅 Gemini model 今日額度都用完（${quotaHit.join("、")}）。請等每日重置或升級計劃。`
+    );
+  }
+
+  if (busyHit.length > 0) {
+    throw new Error(
+      `Gemini 暫時繁忙（已自動換 model：${tried.join(" → ")}）。請一分鐘後重試。`
     );
   }
 
   throw lastError instanceof Error
     ? lastError
-    : new Error("Gemini 分析失敗");
+    : new Error(
+        `Gemini 分析失敗（已試：${tried.join("、") || "無"}）`
+      );
 }
