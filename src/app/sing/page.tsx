@@ -64,7 +64,7 @@ export default function SingPage() {
       <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
         <div className="mb-8">
           <h1 className="font-[family-name:var(--font-display)] text-4xl text-white">
-            Start Singing
+            準備練歌
           </h1>
           <p className="mt-2 text-white/55">
             填寫歌名，錄音或上傳檔案，讓 Gemini 為你評分並生成練習建議。

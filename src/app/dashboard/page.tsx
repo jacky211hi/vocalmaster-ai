@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { Mic2, Trophy, Music2, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Navbar } from "@/components/navbar";
+import { DeleteRecordingButton } from "@/components/delete-recording-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Recording } from "@/lib/types";
@@ -17,7 +18,7 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("username")
+    .select("username, avatar_url")
     .eq("id", user.id)
     .single();
 
@@ -35,7 +36,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen">
-      <Navbar username={username} />
+      <Navbar username={username} avatarUrl={profile?.avatar_url} />
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -50,7 +51,7 @@ export default async function DashboardPage() {
           <Link href="/sing">
             <Button size="lg">
               <Mic2 className="h-5 w-5" />
-              Start Singing
+              準備練歌
             </Button>
           </Link>
         </div>
@@ -116,27 +117,37 @@ export default async function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {recent.map((r) => (
-                <Link key={r.id} href={`/result/${r.id}`}>
-                  <Card className="transition hover:border-amber-400/30 hover:bg-white/[0.06]">
-                    <CardContent className="flex items-center justify-between gap-4 py-4">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-white">
-                          {r.song_name}
-                        </p>
-                        <p className="truncate text-sm text-white/45">
-                          {r.artist || "未知歌手"} ·{" "}
-                          {format(new Date(r.created_at), "yyyy-MM-dd HH:mm")}
-                        </p>
-                      </div>
-                      <div className="text-right">
+                <Card
+                  key={r.id}
+                  className="transition hover:border-amber-400/30 hover:bg-white/[0.06]"
+                >
+                  <CardContent className="flex items-center justify-between gap-4 py-4">
+                    <Link href={`/result/${r.id}`} className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-white">
+                        {r.song_name}
+                      </p>
+                      <p className="truncate text-sm text-white/45">
+                        {r.artist || "未知歌手"} ·{" "}
+                        {format(new Date(r.created_at), "yyyy-MM-dd HH:mm")}
+                      </p>
+                    </Link>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <Link href={`/result/${r.id}`} className="text-right">
                         <p className="font-[family-name:var(--font-display)] text-2xl text-amber-300">
                           {r.total_score}
                         </p>
                         <p className="text-xs text-white/40">總分</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                      </Link>
+                      <DeleteRecordingButton
+                        recordingId={r.id}
+                        songName={r.song_name}
+                        variant="ghost"
+                        size="icon"
+                        redirectTo="/dashboard"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}

@@ -7,6 +7,11 @@ import { createClient } from "@/lib/supabase/server";
 import { Navbar } from "@/components/navbar";
 import { ScoreBars } from "@/components/score-bars";
 import { ScoreRadar } from "@/components/score-radar";
+import { DeleteRecordingButton } from "@/components/delete-recording-button";
+import {
+  CommentsSection,
+  type CommentItem,
+} from "@/components/comments-section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Recording } from "@/lib/types";
@@ -25,7 +30,7 @@ export default async function ResultPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("username")
+    .select("username, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -37,6 +42,7 @@ export default async function ResultPage({
 
   if (error || !data) notFound();
   const recording = data as Recording;
+  const isOwner = recording.user_id === user.id;
 
   const scores = {
     timbre_score: recording.timbre_score,
@@ -45,9 +51,37 @@ export default async function ResultPage({
     pitch_score: recording.pitch_score,
   };
 
+  const { data: commentRows } = await supabase
+    .from("comments")
+    .select("id, content, created_at, user_id, profiles(username)")
+    .eq("recording_id", id)
+    .order("created_at", { ascending: true });
+
+  const comments: CommentItem[] = (commentRows ?? []).map(
+    (row: {
+      id: string;
+      content: string;
+      created_at: string;
+      user_id: string;
+      profiles: { username: string } | { username: string }[] | null;
+    }) => {
+      const profiles = row.profiles;
+      const username = Array.isArray(profiles)
+        ? profiles[0]?.username
+        : profiles?.username;
+      return {
+        id: row.id,
+        content: row.content,
+        created_at: row.created_at,
+        user_id: row.user_id,
+        username: username ?? "匿名",
+      };
+    }
+  );
+
   return (
     <div className="min-h-screen">
-      <Navbar username={profile?.username} />
+      <Navbar username={profile?.username} avatarUrl={profile?.avatar_url} />
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <Link href="/dashboard">
@@ -62,6 +96,12 @@ export default async function ResultPage({
               再唱一首
             </Button>
           </Link>
+          {isOwner && (
+            <DeleteRecordingButton
+              recordingId={recording.id}
+              songName={recording.song_name}
+            />
+          )}
         </div>
 
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -147,6 +187,13 @@ export default async function ResultPage({
             </div>
           </CardContent>
         </Card>
+
+        <CommentsSection
+          recordingId={recording.id}
+          currentUserId={user.id}
+          isRecordingOwner={isOwner}
+          initialComments={comments}
+        />
       </main>
     </div>
   );

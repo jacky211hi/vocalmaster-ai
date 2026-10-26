@@ -5,23 +5,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export function LeaderboardTabs({
   personal,
   global,
+  friends,
 }: {
   personal: React.ReactNode;
   global: React.ReactNode;
+  friends: React.ReactNode;
 }) {
   return (
     <Tabs defaultValue="personal">
-      <TabsList>
+      <TabsList className="flex flex-wrap">
         <TabsTrigger value="personal">Personal Best</TabsTrigger>
-        <TabsTrigger value="global">Global / Friends</TabsTrigger>
+        <TabsTrigger value="friends">Friends</TabsTrigger>
+        <TabsTrigger value="global">Global</TabsTrigger>
       </TabsList>
       <TabsContent value="personal">{personal}</TabsContent>
-      <TabsContent value="global">
-        <p className="mb-4 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] px-4 py-3 text-sm text-white/50">
-          目前顯示全球榜。朋友排行榜（Friends）會喺之後版本加入。
-        </p>
-        {global}
-      </TabsContent>
+      <TabsContent value="friends">{friends}</TabsContent>
+      <TabsContent value="global">{global}</TabsContent>
     </Tabs>
   );
 }
