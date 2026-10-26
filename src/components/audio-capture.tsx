@@ -1,0 +1,298 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Mic, Square, Upload, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+type Props = {
+  onAudioReady: (file: File | null) => void;
+  disabled?: boolean;
+};
+
+function pickMimeType() {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg",
+  ];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+}
+
+export function AudioCapture({ onAudioReady, disabled }: Props) {
+  const [mode, setMode] = useState<"record" | "upload">("record");
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const dragDepthRef = useRef(0);
+  const previewUrlRef = useRef<string | null>(null);
+
+  const clearPreview = useCallback(() => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+    setPreviewUrl(null);
+    setFileName(null);
+    onAudioReady(null);
+  }, [onAudioReady]);
+
+  const acceptFile = useCallback(
+    (file: File | undefined | null) => {
+      if (!file) return;
+      setError(null);
+      clearPreview();
+
+      const allowed = [
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/x-m4a",
+        "audio/m4a",
+        "audio/wav",
+        "audio/wave",
+        "audio/x-wav",
+        "audio/webm",
+        "audio/ogg",
+      ];
+      const okExt = /\.(mp3|m4a|wav|webm|ogg)$/i.test(file.name);
+      if (!allowed.includes(file.type) && !okExt) {
+        setError("只支援 .mp3 / .m4a / .wav 檔案。");
+        return;
+      }
+
+      const url = URL.createObjectURL(file);
+      previewUrlRef.current = url;
+      setPreviewUrl(url);
+      setFileName(file.name);
+      onAudioReady(file);
+    },
+    [clearPreview, onAudioReady]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  async function startRecording() {
+    setError(null);
+    clearPreview();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = pickMimeType();
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined
+      );
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        const ext = blob.type.includes("mp4")
+          ? "m4a"
+          : blob.type.includes("ogg")
+            ? "ogg"
+            : "webm";
+        const file = new File([blob], `recording-${Date.now()}.${ext}`, {
+          type: blob.type,
+        });
+        const url = URL.createObjectURL(blob);
+        previewUrlRef.current = url;
+        setPreviewUrl(url);
+        setFileName(file.name);
+        onAudioReady(file);
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start(250);
+      setRecording(true);
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+    } catch {
+      setError("無法使用麥克風，請檢查瀏覽器權限。");
+    }
+  }
+
+  function stopRecording() {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    acceptFile(e.target.files?.[0]);
+    e.target.value = "";
+  }
+
+  function onDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return;
+    dragDepthRef.current += 1;
+    setDragging(true);
+  }
+
+  function onDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current -= 1;
+    if (dragDepthRef.current <= 0) {
+      dragDepthRef.current = 0;
+      setDragging(false);
+    }
+  }
+
+  function onDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setDragging(false);
+    if (disabled) return;
+    acceptFile(e.dataTransfer.files?.[0]);
+  }
+
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const ss = String(elapsed % 60).padStart(2, "0");
+
+  return (
+    <div className="space-y-4">
+      <div className="inline-flex rounded-2xl border border-white/10 bg-black/30 p-1">
+        <button
+          type="button"
+          disabled={disabled || recording}
+          onClick={() => setMode("record")}
+          className={cn(
+            "rounded-xl px-4 py-2 text-sm font-medium transition",
+            mode === "record"
+              ? "bg-amber-400 text-slate-950"
+              : "text-white/60 hover:text-white"
+          )}
+        >
+          錄音
+        </button>
+        <button
+          type="button"
+          disabled={disabled || recording}
+          onClick={() => setMode("upload")}
+          className={cn(
+            "rounded-xl px-4 py-2 text-sm font-medium transition",
+            mode === "upload"
+              ? "bg-amber-400 text-slate-950"
+              : "text-white/60 hover:text-white"
+          )}
+        >
+          上傳
+        </button>
+      </div>
+
+      {mode === "record" ? (
+        <div className="rounded-3xl border border-dashed border-white/15 bg-black/20 p-8 text-center">
+          <div
+            className={cn(
+              "mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full transition",
+              recording
+                ? "animate-pulse bg-rose-500/30 text-rose-300 ring-4 ring-rose-400/30"
+                : "bg-amber-400/15 text-amber-300"
+            )}
+          >
+            <Mic className="h-8 w-8" />
+          </div>
+          <p className="mb-1 font-[family-name:var(--font-display)] text-2xl text-white">
+            {recording ? `${mm}:${ss}` : "準備錄音"}
+          </p>
+          <p className="mb-6 text-sm text-white/50">
+            用瀏覽器直接錄下你的歌聲
+          </p>
+          {recording ? (
+            <Button type="button" variant="danger" onClick={stopRecording} disabled={disabled}>
+              <Square className="h-4 w-4" />
+              停止
+            </Button>
+          ) : (
+            <Button type="button" onClick={startRecording} disabled={disabled}>
+              <Mic className="h-4 w-4" />
+              開始錄音
+            </Button>
+          )}
+        </div>
+      ) : (
+        <label
+          onDragEnter={onDragEnter}
+          onDragLeave={onDragLeave}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          className={cn(
+            "flex cursor-pointer flex-col items-center rounded-3xl border border-dashed bg-black/20 p-8 transition",
+            dragging
+              ? "border-amber-400 bg-amber-400/10 scale-[1.01]"
+              : "border-white/15 hover:border-amber-400/40 hover:bg-amber-400/5"
+          )}
+        >
+          <Upload
+            className={cn(
+              "mb-3 h-8 w-8 transition",
+              dragging ? "text-amber-200" : "text-amber-300"
+            )}
+          />
+          <p className="mb-1 text-white">
+            {dragging ? "放開以上傳檔案" : "拖曳或點擊上傳錄音"}
+          </p>
+          <p className="text-sm text-white/45">支援 .m4a / .mp3 / .wav</p>
+          <input
+            type="file"
+            accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/wav"
+            className="hidden"
+            disabled={disabled}
+            onChange={onFileChange}
+          />
+        </label>
+      )}
+
+      {previewUrl && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm text-white/80">{fileName}</p>
+            <audio src={previewUrl} controls className="mt-2 w-full" />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={clearPreview}
+            disabled={disabled}
+          >
+            <Trash2 className="h-4 w-4" />
+            清除
+          </Button>
+        </div>
+      )}
+
+      {error && <p className="text-sm text-rose-300">{error}</p>}
+    </div>
+  );
+}

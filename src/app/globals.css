@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+:root {
+  --background: #070b14;
+  --foreground: #f5f7fb;
+  --stage-amber: #fbbf24;
+  --stage-glow: rgba(251, 191, 36, 0.18);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--foreground);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(56, 189, 248, 0.12), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, var(--stage-glow), transparent 50%),
+    radial-gradient(800px 500px at 50% 100%, rgba(249, 115, 22, 0.08), transparent 55%),
+    linear-gradient(180deg, #0b1220 0%, #070b14 45%, #05080f 100%);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+::selection {
+  background: rgba(251, 191, 36, 0.35);
+  color: #fff;
+}
+
+.prose-vocal {
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.7;
+}
+
+.prose-vocal h1,
+.prose-vocal h2,
+.prose-vocal h3 {
+  color: #fff;
+  font-weight: 600;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+}
+
+.prose-vocal p {
+  margin: 0.75em 0;
+}
+
+.prose-vocal ul {
+  margin: 0.75em 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.prose-vocal strong {
+  color: #fde68a;
+  font-weight: 600;
+}
+
+.prose-vocal code {
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1rem 0.35rem;
+  font-size: 0.9em;
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-float-soft {
+  animation: float-soft 5s ease-in-out infinite;
+}
+
+@keyframes shimmer-bar {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-shimmer {
+  background-size: 200% 200%;
+  animation: shimmer-bar 2.5s linear infinite;
+}
