@@ -5,11 +5,14 @@ export type Recording = {
   artist: string;
   audio_url: string;
   storage_path?: string | null;
+  share_audio?: boolean;
   total_score: number;
   timbre_score: number;
-  mechanism_score: number;
-  breath_score: number;
+  phonation_score: number;
   pitch_score: number;
+  breath_score: number;
+  rhythm_score: number;
+  dynamics_score: number;
   ai_feedback_md: string;
   actionable_advice: string;
   created_at: string;
@@ -23,12 +26,17 @@ export type Profile = {
   created_at: string;
 };
 
-export type VocalAnalysisResult = {
-  total_score: number;
+export type DimensionScores = {
   timbre_score: number;
-  mechanism_score: number;
-  breath_score: number;
+  phonation_score: number;
   pitch_score: number;
+  breath_score: number;
+  rhythm_score: number;
+  dynamics_score: number;
+};
+
+export type VocalAnalysisResult = DimensionScores & {
+  total_score: number;
   detailed_feedback: string;
   actionable_advice: string;
 };

@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { MessageCircle, Send, Trash2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { UserAvatar } from "@/components/user-avatar";
 
 export type CommentItem = {
   id: string;
@@ -13,6 +14,7 @@ export type CommentItem = {
   created_at: string;
   user_id: string;
   username: string;
+  avatar_url?: string | null;
 };
 
 type Props = {
@@ -125,13 +127,20 @@ export function CommentsSection({
                   className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
                 >
                   <div className="mb-1 flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-amber-200/90">
-                        {c.username}
-                      </p>
-                      <p className="text-xs text-white/35">
-                        {format(new Date(c.created_at), "yyyy-MM-dd HH:mm")}
-                      </p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <UserAvatar
+                        avatarUrl={c.avatar_url}
+                        username={c.username}
+                        size={36}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-amber-200/90">
+                          {c.username}
+                        </p>
+                        <p className="text-xs text-white/35">
+                          {format(new Date(c.created_at), "yyyy-MM-dd HH:mm")}
+                        </p>
+                      </div>
                     </div>
                     {canDelete && (
                       <Button
@@ -151,7 +160,7 @@ export function CommentsSection({
                       </Button>
                     )}
                   </div>
-                  <p className="whitespace-pre-wrap text-sm text-white/80">
+                  <p className="whitespace-pre-wrap pl-12 text-sm text-white/80">
                     {c.content}
                   </p>
                 </li>

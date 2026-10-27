@@ -1,6 +1,6 @@
 # VocalMaster AI（AI 聲樂教練）
 
-Multi-user web app: record or upload singing → Gemini vocal analysis (timbre / mechanism / breath / pitch) → progress tracking & leaderboards.
+Multi-user web app: record or upload singing → Gemini vocal analysis (timbre / phonation / pitch / breath / rhythm / dynamics) → progress tracking & leaderboards.
 
 **Stack:** Next.js (App Router) · Tailwind CSS · Supabase (Auth / Postgres / Storage) · Google GenAI SDK (Gemini 2.5)
 
@@ -44,7 +44,7 @@ Open [http://localhost:3000](http://localhost:3000).
 |---|---|
 | `/` | Landing |
 | `/login` | Email/password signup & login |
-| `/dashboard` | Stats + recent recordings |
+| `/dashboard` | 練習室 — stats + recent recordings |
 | `/sing` | Record (MediaRecorder) or upload → analyze |
 | `/result/[id]` | Scores, radar, AI report, actionable advice |
 | `/leaderboard` | Personal Best + Global (Friends coming soon) |

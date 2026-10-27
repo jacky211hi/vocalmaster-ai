@@ -105,9 +105,11 @@ export async function POST(request: Request) {
         storage_path: storagePath,
         total_score: 0,
         timbre_score: 0,
-        mechanism_score: 0,
-        breath_score: 0,
+        phonation_score: 0,
         pitch_score: 0,
+        breath_score: 0,
+        rhythm_score: 0,
+        dynamics_score: 0,
         ai_feedback_md: ANALYZING_MARKER,
         actionable_advice: "",
       })

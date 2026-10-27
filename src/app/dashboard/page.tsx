@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { format } from "date-fns";
-import { Mic2, Trophy, Music2, ArrowRight } from "lucide-react";
+import { Mic2, Trophy, Music2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Navbar } from "@/components/navbar";
 import { DeleteRecordingButton } from "@/components/delete-recording-button";
+import { VocalProfileCard } from "@/components/vocal-profile-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { buildVocalProfile } from "@/lib/vocal-profile";
 import type { Recording } from "@/lib/types";
 
 export default async function DashboardPage() {
@@ -33,6 +35,7 @@ export default async function DashboardPage() {
   const highest = list.reduce((max, r) => Math.max(max, r.total_score), 0);
   const recent = list.slice(0, 5);
   const username = profile?.username ?? user.email?.split("@")[0] ?? "歌手";
+  const vocalProfile = buildVocalProfile(list);
 
   return (
     <div className="min-h-screen">
@@ -40,9 +43,9 @@ export default async function DashboardPage() {
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm text-amber-200/70">歡迎回來</p>
+            <p className="text-sm text-amber-200/70">練習室</p>
             <h1 className="mt-1 font-[family-name:var(--font-display)] text-4xl text-white sm:text-5xl">
-              {username}
+              歡迎回來，{username}
             </h1>
             <p className="mt-2 max-w-lg text-white/55">
               繼續練唱、追蹤分數，讓 AI 教練幫你找出可以改善的地方。
@@ -56,7 +59,7 @@ export default async function DashboardPage() {
           </Link>
         </div>
 
-        <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mb-10 grid gap-4 sm:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base text-white/70">
@@ -85,18 +88,22 @@ export default async function DashboardPage() {
               <p className="mt-1 text-sm text-white/45">個人最佳 total score</p>
             </CardContent>
           </Card>
-          <Card className="sm:col-span-2 lg:col-span-1">
-            <CardContent className="flex h-full flex-col justify-center gap-3 p-6">
-              <p className="text-sm text-white/55">查看完整排行與進步軌跡</p>
-              <Link href="/leaderboard">
-                <Button variant="secondary" className="w-full">
-                  打開排行榜
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
+        </div>
+
+        {vocalProfile ? (
+          <VocalProfileCard insight={vocalProfile} />
+        ) : (
+          <Card className="mb-10 border-dashed border-white/15">
+            <CardContent className="py-10 text-center">
+              <p className="text-white/60">
+                完成至少一次 AI 分析後，呢度會顯示你嘅音域風格、強弱項同練習建議。
+              </p>
+              <Link href="/sing" className="mt-4 inline-block">
+                <Button>去錄第一首</Button>
               </Link>
             </CardContent>
           </Card>
-        </div>
+        )}
 
         <section>
           <div className="mb-4 flex items-center justify-between">

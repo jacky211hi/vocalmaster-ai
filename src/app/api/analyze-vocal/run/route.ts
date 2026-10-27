@@ -121,10 +121,12 @@ export async function POST(request: Request) {
     let audioUrl = recording.audio_url ?? "";
     let storagePath = recording.storage_path as string | null;
 
+    let shareAudio = Boolean(recording.share_audio);
     if (!keepAudio && storagePath) {
       await supabase.storage.from("recordings").remove([storagePath]);
       storagePath = null;
       audioUrl = "";
+      shareAudio = false;
     } else if (keepAudio && storagePath && !audioUrl) {
       const { data: signed } = await supabase.storage
         .from("recordings")
@@ -137,13 +139,16 @@ export async function POST(request: Request) {
       .update({
         total_score: analysis.total_score,
         timbre_score: analysis.timbre_score,
-        mechanism_score: analysis.mechanism_score,
-        breath_score: analysis.breath_score,
+        phonation_score: analysis.phonation_score,
         pitch_score: analysis.pitch_score,
+        breath_score: analysis.breath_score,
+        rhythm_score: analysis.rhythm_score,
+        dynamics_score: analysis.dynamics_score,
         ai_feedback_md: analysis.detailed_feedback,
         actionable_advice: analysis.actionable_advice,
         audio_url: audioUrl,
         storage_path: storagePath,
+        share_audio: shareAudio,
       })
       .eq("id", id)
       .eq("user_id", user.id);

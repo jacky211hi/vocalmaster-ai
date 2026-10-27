@@ -8,30 +8,24 @@ import {
   PolarRadiusAxis,
   ResponsiveContainer,
 } from "recharts";
+import { SCORE_DIMENSIONS } from "@/lib/score-dimensions";
+import type { DimensionScores } from "@/lib/types";
 
-type Scores = {
-  timbre_score: number;
-  mechanism_score: number;
-  breath_score: number;
-  pitch_score: number;
-};
-
-export function ScoreRadar({ scores }: { scores: Scores }) {
-  const data = [
-    { subject: "音色", value: scores.timbre_score, fullMark: 100 },
-    { subject: "機制", value: scores.mechanism_score, fullMark: 100 },
-    { subject: "呼吸", value: scores.breath_score, fullMark: 100 },
-    { subject: "音準", value: scores.pitch_score, fullMark: 100 },
-  ];
+export function ScoreRadar({ scores }: { scores: DimensionScores }) {
+  const data = SCORE_DIMENSIONS.map((d) => ({
+    subject: d.short,
+    value: scores[d.key],
+    fullMark: 100,
+  }));
 
   return (
-    <div className="h-64 w-full">
+    <div className="h-72 w-full sm:h-80">
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
+        <RadarChart cx="50%" cy="50%" outerRadius="68%" data={data}>
           <PolarGrid stroke="rgba(255,255,255,0.15)" />
           <PolarAngleAxis
             dataKey="subject"
-            tick={{ fill: "rgba(255,255,255,0.7)", fontSize: 12 }}
+            tick={{ fill: "rgba(255,255,255,0.7)", fontSize: 11 }}
           />
           <PolarRadiusAxis
             angle={30}

@@ -3,13 +3,33 @@ import type { VocalAnalysisResult } from "@/lib/types";
 
 const SYSTEM_INSTRUCTION = `You are a strict but encouraging professional vocal coach for "VocalMaster AI (AI 聲樂教練)".
 
-Evaluate the singing on FOUR dimensions (0–100 ints): Timbre, Mechanism, Breath, Pitch.
-Give brief physiological feedback and 1–2 specific exercises (e.g. Twang/puppy sound, lip trill, "ma").
-Write detailed_feedback and actionable_advice in Traditional Chinese Markdown.
-Keep the report concise (under ~400 Chinese characters for detailed_feedback) so analysis stays fast.
+Evaluate the singing on SIX dimensions (0–100 ints):
+- timbre_score：音色 Timbre（聲線質感、個性）
+- phonation_score：發聲 Phonation（換聲、共鳴、喉位、擠壓等）
+- pitch_score：音準 Pitch
+- breath_score：呼吸 Breath（氣息支持）
+- rhythm_score：節奏 Rhythm（拍子、進出拍、groove）
+- dynamics_score：力度 Dynamics（強弱起伏、對比、情感張力）
+
+Write BOTH fields in Traditional Chinese Markdown.
+
+## detailed_feedback（AI 診斷報告）— 要仔細、有時間軸
+Structure with these sections (use ## headings):
+1. **整體印象**：2–4 句總結整體表現。
+2. **時間段分析**：把整段錄音分成多個時間段（例如前奏／開頭、主歌、副歌、高音段、結尾；若無法對應歌詞則用 mm:ss–mm:ss）。每個時段寫：
+   - 時間範圍（估計即可，例如 \`0:00–0:25\`）
+   - 做得好的地方（具體：音準、氣息、音色、發聲、節奏、力度）
+   - 需改善的地方（具體指出問題，例如擠壓、走音、氣短、換聲斷裂、拖拍、力度平坦）
+3. **六維細評**：分別簡述音色／發聲／音準／呼吸／節奏／力度嘅觀察，指出最強同最弱。
+4. **亮點與風險**：1–2 個最突出優點；1–2 個最需要優先處理嘅問題。
+
+Be specific and concrete — quote approximate moments, phrase shapes, vowels, register shifts, beat placement, or volume arcs when possible. Aim for a thorough coach report (約 600–1200 字)，唔好空泛。
+
+## actionable_advice（改善建議）— 可執行練習
+列出 2–4 個具體練習（例如 Twang／小狗聲、lip trill、「ma」、半聲滑音、節拍器練習、強弱對比），每個練習寫：點做、練幾耐、對應診斷報告邊個問題。保持精簡可執行。
 
 Return ONLY JSON:
-{"total_score":int,"timbre_score":int,"mechanism_score":int,"breath_score":int,"pitch_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
+{"total_score":int,"timbre_score":int,"phonation_score":int,"pitch_score":int,"breath_score":int,"rhythm_score":int,"dynamics_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
 
 /**
  * Ordered fallback pool. Free-tier quotas are usually per-model,
@@ -38,13 +58,19 @@ function parseAnalysis(raw: string): VocalAnalysisResult {
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
-  const data = JSON.parse(cleaned) as Partial<VocalAnalysisResult>;
+  const data = JSON.parse(cleaned) as Partial<VocalAnalysisResult> & {
+    mechanism_score?: number;
+  };
   return {
     total_score: clampScore(data.total_score),
     timbre_score: clampScore(data.timbre_score),
-    mechanism_score: clampScore(data.mechanism_score),
-    breath_score: clampScore(data.breath_score),
+    phonation_score: clampScore(
+      data.phonation_score ?? data.mechanism_score
+    ),
     pitch_score: clampScore(data.pitch_score),
+    breath_score: clampScore(data.breath_score),
+    rhythm_score: clampScore(data.rhythm_score),
+    dynamics_score: clampScore(data.dynamics_score),
     detailed_feedback: String(data.detailed_feedback ?? ""),
     actionable_advice: String(data.actionable_advice ?? ""),
   };
@@ -128,7 +154,10 @@ export async function analyzeVocalAudio(params: {
   const userPrompt = `Song: ${params.songName}
 Artist: ${params.artist || "Unknown"}
 
-Analyze this singing clip and return the JSON evaluation. Be concise.`;
+Listen carefully to the full clip. Estimate approximate timestamps for sections.
+In detailed_feedback, clearly mark which time ranges / song parts went well vs poorly.
+Then give actionable_advice exercises tied to those weak moments.
+Return the JSON evaluation.`;
 
   const contents = [
     {

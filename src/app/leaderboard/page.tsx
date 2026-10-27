@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
+import { Headphones } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getAcceptedFriendIds } from "@/lib/friends";
 import { Navbar } from "@/components/navbar";
@@ -14,6 +15,9 @@ type GlobalRow = {
   artist: string;
   total_score: number;
   created_at: string;
+  share_audio?: boolean | null;
+  storage_path?: string | null;
+  audio_url?: string | null;
   profiles: { username: string } | { username: string }[] | null;
 };
 
@@ -23,6 +27,16 @@ function usernameFromJoin(
   if (!profiles) return "匿名";
   if (Array.isArray(profiles)) return profiles[0]?.username ?? "匿名";
   return profiles.username ?? "匿名";
+}
+
+function hasSharedAudio(row: {
+  share_audio?: boolean | null;
+  storage_path?: string | null;
+  audio_url?: string | null;
+}) {
+  return Boolean(
+    row.share_audio && (row.storage_path || row.audio_url)
+  );
 }
 
 export default async function LeaderboardPage() {
@@ -47,7 +61,9 @@ export default async function LeaderboardPage() {
 
   const { data: globalRows } = await supabase
     .from("recordings")
-    .select("id, song_name, artist, total_score, created_at, profiles(username)")
+    .select(
+      "id, song_name, artist, total_score, created_at, share_audio, storage_path, audio_url, profiles(username)"
+    )
     .order("total_score", { ascending: false })
     .limit(30);
 
@@ -62,13 +78,14 @@ export default async function LeaderboardPage() {
     total_score: number;
     created_at: string;
     username: string;
+    audioShared: boolean;
   }[] = [];
 
   if (circleIds.length > 0) {
     const { data: friendRows } = await supabase
       .from("recordings")
       .select(
-        "id, song_name, artist, total_score, created_at, profiles(username)"
+        "id, song_name, artist, total_score, created_at, share_audio, storage_path, audio_url, profiles(username)"
       )
       .in("user_id", circleIds)
       .order("total_score", { ascending: false })
@@ -82,6 +99,7 @@ export default async function LeaderboardPage() {
       total_score: row.total_score,
       created_at: row.created_at,
       username: usernameFromJoin(row.profiles),
+      audioShared: hasSharedAudio(row),
     }));
   }
 
@@ -94,6 +112,7 @@ export default async function LeaderboardPage() {
     total_score: row.total_score,
     created_at: row.created_at,
     username: usernameFromJoin(row.profiles),
+    audioShared: hasSharedAudio(row),
   }));
 
   return (
@@ -105,7 +124,7 @@ export default async function LeaderboardPage() {
             排行榜
           </h1>
           <p className="mt-2 text-white/55">
-            個人、朋友圈同全球成績。去「朋友」頁加好友。
+            個人、朋友圈同全球成績。全球榜可用耳機圖示睇邊啲人有分享錄音；預設唔公開音檔。
           </p>
         </div>
 
@@ -123,6 +142,7 @@ export default async function LeaderboardPage() {
                     title={r.song_name}
                     subtitle={`${r.artist || "未知歌手"} · ${format(new Date(r.created_at), "yyyy-MM-dd")}`}
                     score={r.total_score}
+                    audioShared={hasSharedAudio(r)}
                   />
                 ))}
               </ol>
@@ -147,6 +167,7 @@ export default async function LeaderboardPage() {
                     title={r.song_name}
                     subtitle={`${r.username} · ${r.artist || "未知歌手"}`}
                     score={r.total_score}
+                    audioShared={r.audioShared}
                   />
                 ))}
               </ol>
@@ -165,6 +186,7 @@ export default async function LeaderboardPage() {
                     title={r.song_name}
                     subtitle={`${r.username} · ${r.artist || "未知歌手"}`}
                     score={r.total_score}
+                    audioShared={r.audioShared}
                   />
                 ))}
               </ol>
@@ -206,12 +228,14 @@ function RankRow({
   subtitle,
   score,
   href,
+  audioShared,
 }: {
   rank: number;
   title: string;
   subtitle: string;
   score: number;
   href: string;
+  audioShared?: boolean;
 }) {
   return (
     <li>
@@ -231,6 +255,14 @@ function RankRow({
               <p className="truncate font-semibold text-white">{title}</p>
               <p className="truncate text-sm text-white/45">{subtitle}</p>
             </div>
+            {audioShared && (
+              <span
+                title="已分享音樂檔"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-amber-300"
+              >
+                <Headphones className="h-4 w-4" />
+              </span>
+            )}
             <p className="font-[family-name:var(--font-display)] text-2xl text-amber-300">
               {score}
             </p>

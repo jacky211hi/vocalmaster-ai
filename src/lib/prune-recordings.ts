@@ -68,7 +68,7 @@ export async function pruneUserRecordingsToTopN(
 
   const { error: updateError } = await supabase
     .from("recordings")
-    .update({ audio_url: "", storage_path: null })
+    .update({ audio_url: "", storage_path: null, share_audio: false })
     .in(
       "id",
       toStrip.map((r) => r.id)

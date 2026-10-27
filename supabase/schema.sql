@@ -18,11 +18,14 @@ create table if not exists public.recordings (
   artist text not null default '',
   audio_url text not null default '',
   storage_path text,
+  share_audio boolean not null default false,
   total_score integer not null default 0 check (total_score between 0 and 100),
   timbre_score integer not null default 0 check (timbre_score between 0 and 100),
-  mechanism_score integer not null default 0 check (mechanism_score between 0 and 100),
-  breath_score integer not null default 0 check (breath_score between 0 and 100),
+  phonation_score integer not null default 0 check (phonation_score between 0 and 100),
   pitch_score integer not null default 0 check (pitch_score between 0 and 100),
+  breath_score integer not null default 0 check (breath_score between 0 and 100),
+  rhythm_score integer not null default 0 check (rhythm_score between 0 and 100),
+  dynamics_score integer not null default 0 check (dynamics_score between 0 and 100),
   ai_feedback_md text not null default '',
   actionable_advice text not null default '',
   created_at timestamptz not null default now()
@@ -205,6 +208,19 @@ create policy "Users can read own audio"
   using (
     bucket_id = 'recordings'
     and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "Authenticated can read shared audio"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'recordings'
+    and exists (
+      select 1
+      from public.recordings r
+      where r.storage_path = name
+        and r.share_audio = true
+    )
   );
 
 create policy "Users can delete own audio"

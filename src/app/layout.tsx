@@ -15,7 +15,7 @@ const display = Fraunces({
 export const metadata: Metadata = {
   title: "VocalMaster AI · AI 聲樂教練",
   description:
-    "錄音或上傳歌聲，取得 AI 音色／機制／呼吸／音準分析、改善建議與個人排行榜。",
+    "錄音或上傳歌聲，取得 AI 音色／發聲／音準／呼吸／節奏／力度分析、改善建議與個人排行榜。",
 };
 
 export const viewport: Viewport = {

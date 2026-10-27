@@ -48,7 +48,7 @@ export default async function HomePage() {
               VocalMaster AI
             </h1>
             <p className="mt-5 max-w-xl text-lg text-white/60">
-              錄音或上傳歌聲，即時取得音色、發聲機制、呼吸與音準評分，並收到可執行的練習建議。
+              錄音或上傳歌聲，即時取得音色、發聲、音準、呼吸、節奏與力度評分，並收到可執行的練習建議。
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href="/login">
@@ -66,8 +66,8 @@ export default async function HomePage() {
             {[
               {
                 icon: Waves,
-                title: "四維評分",
-                desc: "音色 · 機制 · 呼吸 · 音準",
+                title: "六維評分",
+                desc: "音色 · 發聲 · 音準 · 呼吸 · 節奏 · 力度",
               },
               {
                 icon: Sparkles,
