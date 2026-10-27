@@ -81,7 +81,11 @@ PY
       fi
     } > supabase/migrations/20260101000000_init.sql
   fi
-  supabase stack start --runtime native --eager --yes
+  if ! supabase stack start --runtime native --eager --yes >/tmp/supabase-stack-start.json; then
+    echo "supabase stack start failed" >&2
+    exit 1
+  fi
+  echo "Local Supabase stack is ready"
   set -a
   # shellcheck disable=SC2046
   eval "$(supabase stack status --env --output-format text | sed 's/^/export /')"
