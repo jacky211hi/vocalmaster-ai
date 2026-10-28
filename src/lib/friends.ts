@@ -11,8 +11,27 @@ export type FriendRow = {
 export type FriendWithProfile = FriendRow & {
   other_id: string;
   username: string;
+  avatar_url?: string | null;
   direction: "incoming" | "outgoing" | "friend";
 };
+
+/** True if an accepted friendship exists between the two users (either direction). */
+export async function areAcceptedFriends(
+  supabase: SupabaseClient,
+  userId: string,
+  otherUserId: string
+): Promise<boolean> {
+  if (userId === otherUserId) return true;
+  const { data } = await supabase
+    .from("friends")
+    .select("id")
+    .eq("status", "accepted")
+    .or(
+      `and(user_id.eq.${userId},friend_id.eq.${otherUserId}),and(user_id.eq.${otherUserId},friend_id.eq.${userId})`
+    )
+    .maybeSingle();
+  return Boolean(data);
+}
 
 export async function listFriendships(
   supabase: SupabaseClient,
@@ -41,14 +60,16 @@ export async function listFriendships(
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, username")
+    .select("id, username, avatar_url")
     .in("id", otherIds);
 
-  const nameById = new Map(
-    (profiles ?? []).map((p: { id: string; username: string }) => [
-      p.id,
-      p.username,
-    ])
+  const profileById = new Map(
+    (profiles ?? []).map(
+      (p: { id: string; username: string; avatar_url?: string | null }) => [
+        p.id,
+        p,
+      ]
+    )
   );
 
   return (rows as FriendRow[]).map((r) => {
@@ -57,10 +78,12 @@ export async function listFriendships(
     if (r.status === "pending") {
       direction = r.friend_id === userId ? "incoming" : "outgoing";
     }
+    const profile = profileById.get(other_id);
     return {
       ...r,
       other_id,
-      username: nameById.get(other_id) ?? "未知用戶",
+      username: profile?.username ?? "未知用戶",
+      avatar_url: profile?.avatar_url ?? null,
       direction,
     };
   });

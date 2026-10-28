@@ -10,6 +10,8 @@ import {
   pruneUserRecordingsToTopN,
   scoreQualifiesForTopN,
 } from "@/lib/prune-recordings";
+import { lookupLyrics } from "@/lib/lyrics";
+import { measuredMarkdown, parsePitchReport } from "@/lib/pitch/report";
 
 export const maxDuration = 60;
 
@@ -95,12 +97,50 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await fileData.arrayBuffer());
     const mimeType = normalizeMime(mimeHint, recording.storage_path);
+    const pitchReport = parsePitchReport(recording.pitch_report);
+    let lyrics = null;
+    try {
+      lyrics = await lookupLyrics(
+        recording.song_name,
+        recording.artist ?? ""
+      );
+    } catch (err) {
+      console.warn(
+        "[lyrics] lookup failed:",
+        err instanceof Error ? err.message : err
+      );
+    }
     const analysis = await analyzeVocalAudio({
       audioBase64: buffer.toString("base64"),
       mimeType,
       songName: recording.song_name,
       artist: recording.artist ?? "",
+      pitchReport,
+      lyrics,
     });
+    const pitchScore = pitchReport
+      ? pitchReport.pitchScore
+      : analysis.pitch_score;
+    const rhythmScore = pitchReport
+      ? pitchReport.rhythmScore
+      : analysis.rhythm_score;
+    const totalScore = pitchReport
+      ? Math.round(
+          (analysis.timbre_score +
+            analysis.phonation_score +
+            pitchScore +
+            analysis.breath_score +
+            rhythmScore +
+            analysis.dynamics_score) /
+            6
+        )
+      : analysis.total_score;
+    const lyricNote = lyrics
+      ? `歌詞對照：${lyrics.artist}〈${lyrics.track}〉\n\n`
+      : "未搵到正式歌詞，時間段分析冇引用聽寫歌詞。\n\n";
+    const feedback = `${lyricNote}${
+      pitchReport ? `${measuredMarkdown(pitchReport)}\n` : ""
+    }${analysis.detailed_feedback}`;
 
     const { data: existingRows } = await supabase
       .from("recordings")
@@ -114,7 +154,7 @@ export async function POST(request: Request) {
 
     const keepAudio = scoreQualifiesForTopN(
       existingScores,
-      analysis.total_score,
+      totalScore,
       PERSONAL_TOP_N
     );
 
@@ -137,14 +177,14 @@ export async function POST(request: Request) {
     const { error: updateError } = await supabase
       .from("recordings")
       .update({
-        total_score: analysis.total_score,
+        total_score: totalScore,
         timbre_score: analysis.timbre_score,
         phonation_score: analysis.phonation_score,
-        pitch_score: analysis.pitch_score,
+        pitch_score: pitchScore,
         breath_score: analysis.breath_score,
-        rhythm_score: analysis.rhythm_score,
+        rhythm_score: rhythmScore,
         dynamics_score: analysis.dynamics_score,
-        ai_feedback_md: analysis.detailed_feedback,
+        ai_feedback_md: feedback,
         actionable_advice: analysis.actionable_advice,
         audio_url: audioUrl,
         storage_path: storagePath,

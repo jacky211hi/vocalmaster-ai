@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { AudioCapture } from "@/components/audio-capture";
+import { ExerciseSession } from "@/components/exercise-session";
 import { Button } from "@/components/ui/button";
+import type { ExerciseId } from "@/lib/pitch/exercises";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -77,20 +80,21 @@ export default function SingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [mode, setMode] = useState<"exercise" | "free">("exercise");
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function uploadRecording(opts: {
+    file: File;
+    songName: string;
+    artist: string;
+    exerciseId?: ExerciseId;
+    tonicMidi?: number;
+  }) {
     setError(null);
-
-    if (!songName.trim()) {
+    if (!opts.songName.trim()) {
       setError("請輸入歌名");
       return;
     }
-    if (!audioFile) {
-      setError("請先錄音或上傳音檔");
-      return;
-    }
-    if (audioFile.size > 20 * 1024 * 1024) {
+    if (opts.file.size > 20 * 1024 * 1024) {
       setError("檔案請小於 20MB");
       return;
     }
@@ -108,14 +112,14 @@ export default function SingPage() {
         throw new Error("請先登入再提交");
       }
 
-      const ext = extForFile(audioFile);
-      const mimeType = mimeForExt(ext, audioFile.type);
+      const ext = extForFile(opts.file);
+      const mimeType = mimeForExt(ext, opts.file.type);
       uploadedPath = `${user.id}/${Date.now()}-${newId()}.${ext}`;
 
-      setStatus(`上傳音訊中…（${(audioFile.size / 1024 / 1024).toFixed(1)} MB）`);
+      setStatus(`上傳音訊中…（${(opts.file.size / 1024 / 1024).toFixed(1)} MB）`);
 
       // ArrayBuffer upload is more reliable on iOS Safari than File/Blob directly
-      const bytes = await audioFile.arrayBuffer();
+      const bytes = await opts.file.arrayBuffer();
       const { error: uploadError } = await supabase.storage
         .from("recordings")
         .upload(uploadedPath, bytes, {
@@ -127,16 +131,20 @@ export default function SingPage() {
         throw new Error(`上傳失敗：${uploadError.message}`);
       }
 
-      setStatus("建立分析任務…");
+      setStatus(
+        opts.exerciseId ? "計算音準並建立分析…" : "建立分析任務…"
+      );
 
       const res = await fetch("/api/analyze-vocal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          song_name: songName.trim(),
-          artist: artist.trim(),
+          song_name: opts.songName.trim(),
+          artist: opts.artist.trim(),
           storage_path: uploadedPath,
           mime_type: mimeType,
+          exercise_id: opts.exerciseId,
+          tonic_midi: opts.tonicMidi,
         }),
       });
 
@@ -164,27 +172,72 @@ export default function SingPage() {
     }
   }
 
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!audioFile) {
+      setError("請先錄音或上傳音檔");
+      return;
+    }
+    void uploadRecording({
+      file: audioFile,
+      songName,
+      artist,
+    });
+  }
+
   return (
     <div className="min-h-screen">
       <Navbar />
-      <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
         <div className="mb-8">
           <h1 className="font-[family-name:var(--font-display)] text-4xl text-white">
             準備練歌
           </h1>
           <p className="mt-2 text-white/55">
-            填寫歌名，錄音或上傳檔案，讓 Gemini 為你評分並生成練習建議。
+            跟譜練習練完即棄。自由錄音先會交俾 Gemini 出六維報告同排行榜。
           </p>
+        </div>
+
+        <div className="mb-4 inline-flex rounded-2xl border border-white/10 bg-black/30 p-1">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setMode("exercise")}
+            className={cn(
+              "rounded-xl px-4 py-2 text-sm font-medium",
+              mode === "exercise"
+                ? "bg-amber-400 text-slate-950"
+                : "text-white/60"
+            )}
+          >
+            跟譜練習
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setMode("free")}
+            className={cn(
+              "rounded-xl px-4 py-2 text-sm font-medium",
+              mode === "free" ? "bg-amber-400 text-slate-950" : "text-white/60"
+            )}
+          >
+            自由錄音
+          </button>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>提交錄音</CardTitle>
+            <CardTitle>{mode === "exercise" ? "跟譜計分" : "提交錄音"}</CardTitle>
             <CardDescription>
-              建議錄 15–60 秒副歌或高音段。整首歌可以，但分析會較慢。
+              {mode === "exercise"
+                ? "戴上耳機跟住提示音唱。練完即棄，唔會計入報告或排行榜。"
+                : "建議錄 15–60 秒副歌或高音段。整首歌可以，但分析會較慢。"}
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {mode === "exercise" ? (
+              <ExerciseSession disabled={loading} />
+            ) : (
             <form onSubmit={onSubmit} className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
@@ -245,6 +298,7 @@ export default function SingPage() {
                 )}
               </Button>
             </form>
+            )}
           </CardContent>
         </Card>
       </main>

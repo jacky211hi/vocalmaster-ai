@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { UserPlus, Check, X, UserMinus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 export function AddFriendForm() {
   const router = useRouter();
@@ -134,11 +135,11 @@ export function RemoveFriendButton({
   label?: string;
 }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const isCancelInvite = label === "取消";
 
-  async function onRemove() {
-    const ok = window.confirm(`確定移除朋友「${username}」？`);
-    if (!ok) return;
+  async function onConfirmRemove() {
     setLoading(true);
     try {
       const res = await fetch(`/api/friends/${friendshipId}`, {
@@ -146,6 +147,7 @@ export function RemoveFriendButton({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "失敗");
+      setOpen(false);
       router.refresh();
     } catch (err) {
       alert(err instanceof Error ? err.message : "失敗");
@@ -154,19 +156,38 @@ export function RemoveFriendButton({
   }
 
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="ghost"
-      onClick={onRemove}
-      disabled={loading}
-    >
-      {loading ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        disabled={loading}
+      >
         <UserMinus className="h-4 w-4" />
-      )}
-      {label}
-    </Button>
+        {label}
+      </Button>
+      <ConfirmDialog
+        open={open}
+        title={isCancelInvite ? "取消邀請？" : "移除好友？"}
+        description={
+          isCancelInvite
+            ? `確定取消向「${username}」發送嘅朋友邀請？`
+            : `確定要移除「${username}」？之後要再睇對方練習室，需要重新加返朋友。`
+        }
+        confirmLabel={isCancelInvite ? "取消邀請" : "移除好友"}
+        cancelLabel="返回"
+        danger
+        loading={loading}
+        onCancel={() => {
+          if (!loading) setOpen(false);
+        }}
+        onConfirm={onConfirmRemove}
+      />
+    </>
   );
 }

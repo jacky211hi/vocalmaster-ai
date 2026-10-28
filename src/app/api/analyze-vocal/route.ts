@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ANALYZING_MARKER } from "@/lib/analysis-status";
+import { isExerciseId } from "@/lib/pitch/exercises";
+import { scoreExerciseById, type PitchReport } from "@/lib/pitch/score";
+import { decodeWav } from "@/lib/pitch/wav";
+
+export const maxDuration = 30;
 
 const ALLOWED_MIME = new Set([
   "audio/mpeg",
@@ -91,6 +96,45 @@ export async function POST(request: Request) {
       );
     }
 
+    const exerciseRaw = String(body.exercise_id ?? "").trim();
+    let pitchReport: PitchReport | null = null;
+    if (exerciseRaw) {
+      if (!isExerciseId(exerciseRaw)) {
+        return NextResponse.json({ error: "未知練習" }, { status: 400 });
+      }
+      const tonic = Number(body.tonic_midi);
+      if (!Number.isInteger(tonic) || tonic < 48 || tonic > 76) {
+        return NextResponse.json({ error: "音域不正確" }, { status: 400 });
+      }
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from("recordings")
+        .download(storagePath);
+      if (downloadError || !fileData) {
+        return NextResponse.json(
+          { error: `讀取音訊失敗：${downloadError?.message ?? "unknown"}` },
+          { status: 500 }
+        );
+      }
+      try {
+        const decoded = decodeWav(new Uint8Array(await fileData.arrayBuffer()));
+        const seconds = decoded.samples.length / decoded.sampleRate;
+        if (seconds > 90) {
+          return NextResponse.json({ error: "練習錄音太長" }, { status: 400 });
+        }
+        pitchReport = scoreExerciseById(
+          decoded.samples,
+          decoded.sampleRate,
+          exerciseRaw,
+          tonic
+        );
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "音準計分失敗" },
+          { status: 400 }
+        );
+      }
+    }
+
     const { data: signed } = await supabase.storage
       .from("recordings")
       .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
@@ -103,22 +147,28 @@ export async function POST(request: Request) {
         artist,
         audio_url: signed?.signedUrl ?? "",
         storage_path: storagePath,
-        total_score: 0,
+        total_score: pitchReport?.pitchScore ?? 0,
         timbre_score: 0,
         phonation_score: 0,
-        pitch_score: 0,
+        pitch_score: pitchReport?.pitchScore ?? 0,
         breath_score: 0,
-        rhythm_score: 0,
+        rhythm_score: pitchReport?.rhythmScore ?? 0,
         dynamics_score: 0,
         ai_feedback_md: ANALYZING_MARKER,
         actionable_advice: "",
+        ...(pitchReport ? { pitch_report: pitchReport } : {}),
       })
       .select("id")
       .single();
 
     if (insertError || !recording) {
+      const missingColumn = insertError?.message?.includes("pitch_report");
       return NextResponse.json(
-        { error: `儲存失敗：${insertError?.message ?? "unknown"}` },
+        {
+          error: missingColumn
+            ? "資料庫未有 pitch_report 欄。請喺 Supabase SQL Editor 執行 supabase/add-pitch-report.sql"
+            : `儲存失敗：${insertError?.message ?? "unknown"}`,
+        },
         { status: 500 }
       );
     }

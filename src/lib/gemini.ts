@@ -1,4 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
+import { lyricsPrompt, type LyricMatch } from "@/lib/lyrics";
+import { coachPitchBrief } from "@/lib/pitch/report";
+import type { PitchReport } from "@/lib/pitch/score";
 import type { VocalAnalysisResult } from "@/lib/types";
 
 const SYSTEM_INSTRUCTION = `You are a strict but encouraging professional vocal coach for "VocalMaster AI (AI 聲樂教練)".
@@ -16,7 +19,7 @@ Write BOTH fields in Traditional Chinese Markdown.
 ## detailed_feedback（AI 診斷報告）— 要仔細、有時間軸
 Structure with these sections (use ## headings):
 1. **整體印象**：2–4 句總結整體表現。
-2. **時間段分析**：把整段錄音分成多個時間段（例如前奏／開頭、主歌、副歌、高音段、結尾；若無法對應歌詞則用 mm:ss–mm:ss）。每個時段寫：
+2. **時間段分析**：把整段錄音分成多個時間段（主歌、副歌、高音段、結尾；時間用錄音本身嘅 mm:ss–mm:ss）。如果提供咗 OFFICIAL_LYRICS，每個時段標題必須抄該歌詞入面嘅正確一句，禁止靠聽寫廣東話歌詞，禁止改字。對唔上就寫「未能對上歌詞」，唔好估詞。冇提供歌詞時，標題只用段落名，唔好加引號歌詞。每個時段寫：
    - 時間範圍（估計即可，例如 \`0:00–0:25\`）
    - 做得好的地方（具體：音準、氣息、音色、發聲、節奏、力度）
    - 需改善的地方（具體指出問題，例如擠壓、走音、氣短、換聲斷裂、拖拍、力度平坦）
@@ -26,7 +29,13 @@ Structure with these sections (use ## headings):
 Be specific and concrete — quote approximate moments, phrase shapes, vowels, register shifts, beat placement, or volume arcs when possible. Aim for a thorough coach report (約 600–1200 字)，唔好空泛。
 
 ## actionable_advice（改善建議）— 可執行練習
-列出 2–4 個具體練習（例如 Twang／小狗聲、lip trill、「ma」、半聲滑音、節拍器練習、強弱對比），每個練習寫：點做、練幾耐、對應診斷報告邊個問題。保持精簡可執行。
+頁面已經有「改善建議」標題，正文不要再寫「改善建議」做標題。
+直接用三級標題列出 2–4 個練習，格式固定：
+### 1. 練習名
+- **點做**：
+- **練幾耐**：
+- **對應問題**：
+練習可以係唇震音、歎氣式 Ma、半聲滑音、節拍器、強弱對比等。保持精簡可執行。
 
 Return ONLY JSON:
 {"total_score":int,"timbre_score":int,"phonation_score":int,"pitch_score":int,"breath_score":int,"rhythm_score":int,"dynamics_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
@@ -38,12 +47,12 @@ Return ONLY JSON:
  * Note: "Antigravity" is a Google agent product, not a generateContent
  * chat model — it cannot replace Gemini Flash for audio analysis.
  */
+/** Models this project can call for audio analysis. */
 const DEFAULT_MODEL_POOL = [
-  "gemini-3.6-flash",
-  "gemini-flash-latest",
-  "gemini-3.5-flash",
-  "gemini-3.7-flash",
   "gemini-3.8-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
 ];
 
 function clampScore(n: unknown): number {
@@ -116,14 +125,15 @@ function isMissingModelError(err: unknown): boolean {
 
 /** Build ordered unique list: preferred → env fallbacks → defaults */
 function modelCandidates(): string[] {
+  const allowed = new Set(DEFAULT_MODEL_POOL);
   const preferred = process.env.GEMINI_MODEL?.trim();
   const fromEnv = (process.env.GEMINI_MODEL_FALLBACKS ?? "")
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter((m) => allowed.has(m));
 
   const ordered = [
-    ...(preferred ? [preferred] : []),
+    ...(preferred && allowed.has(preferred) ? [preferred] : []),
     ...fromEnv,
     ...DEFAULT_MODEL_POOL,
   ];
@@ -144,6 +154,8 @@ export async function analyzeVocalAudio(params: {
   mimeType: string;
   songName: string;
   artist: string;
+  pitchReport?: PitchReport | null;
+  lyrics?: LyricMatch | null;
 }): Promise<VocalAnalysisResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -151,11 +163,16 @@ export async function analyzeVocalAudio(params: {
   }
 
   const ai = new GoogleGenAI({ apiKey });
+  const measured = params.pitchReport
+    ? `\n${coachPitchBrief(params.pitchReport)}\n`
+    : "";
+  const lyrics = params.lyrics ? `\n${lyricsPrompt(params.lyrics)}\n` : "";
   const userPrompt = `Song: ${params.songName}
 Artist: ${params.artist || "Unknown"}
-
-Listen carefully to the full clip. Estimate approximate timestamps for sections.
-In detailed_feedback, clearly mark which time ranges / song parts went well vs poorly.
+${lyrics}${measured}
+Listen carefully to the full clip. Section times are on the user's recording, starting at 0:00.
+In detailed_feedback, mark which time ranges went well vs poorly.
+If OFFICIAL_LYRICS are present, quote those lines exactly in the section titles. Do not transcribe Cantonese lyrics from the audio.
 Then give actionable_advice exercises tied to those weak moments.
 Return the JSON evaluation.`;
 

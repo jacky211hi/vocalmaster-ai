@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Users } from "lucide-react";
+import { ChevronRight, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { listFriendships } from "@/lib/friends";
 import { Navbar } from "@/components/navbar";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   AddFriendForm,
   FriendRequestActions,
@@ -37,7 +39,7 @@ export default async function FriendsPage() {
             朋友
           </h1>
           <p className="mt-2 text-white/55">
-          立刻挑戰朋友的歌喉，在排行榜一決高下！
+            立刻挑戰朋友的歌喉，在排行榜一決高下！撳朋友可睇佢練習室。
           </p>
         </div>
 
@@ -65,9 +67,18 @@ export default async function FriendsPage() {
               {incoming.map((f) => (
                 <Card key={f.id}>
                   <CardContent className="flex items-center justify-between gap-3 py-4">
-                    <div>
-                      <p className="font-semibold text-white">{f.username}</p>
-                      <p className="text-sm text-white/45">想加你做朋友</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <UserAvatar
+                        avatarUrl={f.avatar_url}
+                        username={f.username}
+                        size={40}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-white">
+                          {f.username}
+                        </p>
+                        <p className="text-sm text-white/45">想加你做朋友</p>
+                      </div>
                     </div>
                     <FriendRequestActions friendshipId={f.id} />
                   </CardContent>
@@ -86,9 +97,18 @@ export default async function FriendsPage() {
               {outgoing.map((f) => (
                 <Card key={f.id}>
                   <CardContent className="flex items-center justify-between gap-3 py-4">
-                    <div>
-                      <p className="font-semibold text-white">{f.username}</p>
-                      <p className="text-sm text-white/45">等候對方接受</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <UserAvatar
+                        avatarUrl={f.avatar_url}
+                        username={f.username}
+                        size={40}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-white">
+                          {f.username}
+                        </p>
+                        <p className="text-sm text-white/45">等候對方接受</p>
+                      </div>
                     </div>
                     <RemoveFriendButton
                       friendshipId={f.id}
@@ -115,13 +135,32 @@ export default async function FriendsPage() {
           ) : (
             <div className="space-y-3">
               {friends.map((f) => (
-                <Card key={f.id}>
+                <Card
+                  key={f.id}
+                  className="transition hover:border-amber-400/30 hover:bg-white/[0.06]"
+                >
                   <CardContent className="flex items-center justify-between gap-3 py-4">
-                    <p className="font-semibold text-white">{f.username}</p>
+                    <Link
+                      href={`/friends/${f.other_id}`}
+                      className="flex min-w-0 flex-1 items-center gap-3"
+                    >
+                      <UserAvatar
+                        avatarUrl={f.avatar_url}
+                        username={f.username}
+                        size={40}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-white">
+                          {f.username}
+                        </p>
+                        <p className="text-xs text-white/40">睇練習室</p>
+                      </div>
+                      <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-white/35" />
+                    </Link>
                     <RemoveFriendButton
                       friendshipId={f.id}
                       username={f.username}
-                      label="移除朋友"
+                      label="移除"
                     />
                   </CardContent>
                 </Card>

@@ -14,9 +14,13 @@ import {
   type CommentItem,
 } from "@/components/comments-section";
 import { AnalysisRunner } from "@/components/analysis-runner";
+import { AdviceBlock } from "@/components/advice-block";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { areAcceptedFriends } from "@/lib/friends";
 import { isAnalyzingFeedback } from "@/lib/analysis-status";
+import { parsePitchReport } from "@/lib/pitch/report";
+import { PitchReportPanel } from "@/components/pitch-report-panel";
 import type { Recording } from "@/lib/types";
 
 export default async function ResultPage({
@@ -46,7 +50,28 @@ export default async function ResultPage({
   if (error || !data) notFound();
   const recording = data as Recording;
   const isOwner = recording.user_id === user.id;
+  const viewingFriend =
+    !isOwner &&
+    (await areAcceptedFriends(supabase, user.id, recording.user_id));
+
+  let friendUsername: string | null = null;
+  if (viewingFriend) {
+    const { data: ownerProfile } = await supabase
+      .from("profiles")
+      .select("username")
+      .eq("id", recording.user_id)
+      .maybeSingle();
+    friendUsername = ownerProfile?.username ?? null;
+  }
+
+  const backHref = viewingFriend
+    ? `/friends/${recording.user_id}`
+    : "/dashboard";
+  const backLabel = viewingFriend
+    ? `${friendUsername ?? "朋友"} 練習室`
+    : "練習室";
   const analyzing = isAnalyzingFeedback(recording.ai_feedback_md);
+  const pitchReport = parsePitchReport(recording.pitch_report);
   const hasStoredAudio = Boolean(
     recording.storage_path || recording.audio_url
   );
@@ -110,23 +135,25 @@ export default async function ResultPage({
       <Navbar username={profile?.username} avatarUrl={profile?.avatar_url} />
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <Link href="/dashboard">
+          <Link href={backHref}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4" />
-              練習室
-            </Button>
-          </Link>
-          <Link href="/sing">
-            <Button variant="secondary" size="sm">
-              <Mic2 className="h-4 w-4" />
-              再唱一首
+              {backLabel}
             </Button>
           </Link>
           {isOwner && (
-            <DeleteRecordingButton
-              recordingId={recording.id}
-              songName={recording.song_name}
-            />
+            <>
+              <Link href="/sing">
+                <Button variant="secondary" size="sm">
+                  <Mic2 className="h-4 w-4" />
+                  再唱一首
+                </Button>
+              </Link>
+              <DeleteRecordingButton
+                recordingId={recording.id}
+                songName={recording.song_name}
+              />
+            </>
           )}
         </div>
 
@@ -151,6 +178,8 @@ export default async function ResultPage({
             </p>
           </div>
         </div>
+
+        {pitchReport && <PitchReportPanel report={pitchReport} />}
 
         {analyzing && isOwner ? (
           <AnalysisRunner recordingId={recording.id} />
@@ -228,11 +257,7 @@ export default async function ResultPage({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="prose-vocal">
-                  <ReactMarkdown>
-                    {recording.actionable_advice || "暫無具體練習建議。"}
-                  </ReactMarkdown>
-                </div>
+                <AdviceBlock markdown={recording.actionable_advice || ""} />
               </CardContent>
             </Card>
 

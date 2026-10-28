@@ -1,3 +1,5 @@
+import type { PitchReport } from "@/lib/pitch/score";
+
 export type Recording = {
   id: string;
   user_id: string;
@@ -15,6 +17,7 @@ export type Recording = {
   dynamics_score: number;
   ai_feedback_md: string;
   actionable_advice: string;
+  pitch_report?: PitchReport | null;
   created_at: string;
 };
 

@@ -28,6 +28,7 @@ create table if not exists public.recordings (
   dynamics_score integer not null default 0 check (dynamics_score between 0 and 100),
   ai_feedback_md text not null default '',
   actionable_advice text not null default '',
+  pitch_report jsonb,
   created_at timestamptz not null default now()
 );
 
