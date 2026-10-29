@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
 import { Navbar } from "@/components/navbar";
@@ -84,6 +84,7 @@ export default function SingPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [mode, setMode] = useState<"exercise" | "free">("free");
+  const submittingRef = useRef(false);
 
   async function uploadRecording(opts: {
     file: File;
@@ -92,6 +93,7 @@ export default function SingPage() {
     exerciseId?: ExerciseId;
     tonicMidi?: number;
   }) {
+    if (submittingRef.current) return;
     setError(null);
     if (!opts.songName.trim()) {
       setError("請輸入歌名");
@@ -102,6 +104,7 @@ export default function SingPage() {
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     let uploadedPath: string | null = null;
 
@@ -169,6 +172,9 @@ export default function SingPage() {
       uploadedPath = null; // server owns cleanup / keep
       setStatus("跳轉結果頁，AI 將開始分析…");
       router.push(`/result/${data.id}`);
+      // Keep loading=true until this page unmounts — avoid flash of
+      // "提交並分析" that could double-submit during navigation.
+      return;
     } catch (err) {
       if (uploadedPath) {
         try {
@@ -180,13 +186,14 @@ export default function SingPage() {
       }
       setError(friendlyError(err));
       setStatus(null);
-    } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (loading || submittingRef.current) return;
     if (!audioFile) {
       setError("請先錄音或上傳音檔");
       return;

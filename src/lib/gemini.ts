@@ -143,8 +143,35 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Cap each model attempt so a hung Gemini call cannot burn the full Vercel budget. */
+const MODEL_CALL_TIMEOUT_MS = 70_000;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`MODEL_TIMEOUT after ${ms}ms (${label})`));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function isModelTimeoutError(err: unknown): boolean {
+  return errMessage(err).includes("MODEL_TIMEOUT");
 }
 
 function isQuotaError(err: unknown): boolean {
@@ -275,16 +302,21 @@ Return the JSON evaluation.`;
   const tried: string[] = [];
   const quotaHit: string[] = [];
   const busyHit: string[] = [];
+  const timeoutHit: string[] = [];
   let lastError: unknown;
 
   for (const model of models) {
     try {
       tried.push(model);
-      const response = await ai.models.generateContent({
-        model,
-        contents,
-        config,
-      });
+      const response = await withTimeout(
+        ai.models.generateContent({
+          model,
+          contents,
+          config,
+        }),
+        MODEL_CALL_TIMEOUT_MS,
+        model
+      );
       const text = response.text;
       if (!text) throw new Error("Gemini returned an empty response");
       console.info(`[gemini] success with model=${model}`);
@@ -293,6 +325,11 @@ Return the JSON evaluation.`;
       lastError = err;
       const msg = errMessage(err);
       console.warn(`[gemini] ${model} failed:`, msg);
+
+      if (isModelTimeoutError(err)) {
+        timeoutHit.push(model);
+        continue;
+      }
 
       if (isQuotaError(err)) {
         // This model is over limit — switch to next available model
@@ -322,9 +359,9 @@ Return the JSON evaluation.`;
     );
   }
 
-  if (busyHit.length > 0) {
+  if (busyHit.length > 0 || timeoutHit.length > 0) {
     throw new Error(
-      `Gemini 暫時繁忙（已自動換 model：${tried.join(" → ")}）。請一分鐘後重試。`
+      `Gemini 暫時繁忙或回應太慢（已試：${tried.join(" → ")}）。請一分鐘後喺結果頁撳「重試分析」。`
     );
   }
 
