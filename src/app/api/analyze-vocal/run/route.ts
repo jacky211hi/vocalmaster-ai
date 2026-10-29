@@ -14,6 +14,10 @@ import { coachHistoryPrompt } from "@/lib/coach-history";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { lookupLyrics } from "@/lib/lyrics";
 import { measuredMarkdown, parsePitchReport } from "@/lib/pitch/report";
+import {
+  mergeVocalRange,
+  parseVocalRange,
+} from "@/lib/pitch/vocal-range";
 
 export const maxDuration = 300;
 
@@ -113,19 +117,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: historyRows } = await supabase
-      .from("recordings")
-      .select(
-        "song_name, artist, total_score, timbre_score, phonation_score, pitch_score, breath_score, rhythm_score, dynamics_score, ai_feedback_md, actionable_advice, created_at"
-      )
-      .eq("user_id", user.id)
-      .neq("id", id)
-      .order("created_at", { ascending: false })
-      .limit(12);
+    const [{ data: historyRows }, { data: profileCoach }] = await Promise.all([
+      supabase
+        .from("recordings")
+        .select(
+          "song_name, artist, total_score, timbre_score, phonation_score, pitch_score, breath_score, rhythm_score, dynamics_score, ai_feedback_md, actionable_advice, created_at"
+        )
+        .eq("user_id", user.id)
+        .neq("id", id)
+        .order("created_at", { ascending: false })
+        .limit(3),
+      supabase
+        .from("profiles")
+        .select("coach_summary")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ]);
 
     let coachHistory: string | null = null;
     try {
-      coachHistory = coachHistoryPrompt(historyRows ?? []);
+      coachHistory = coachHistoryPrompt(historyRows ?? [], {
+        rollingSummary: profileCoach?.coach_summary ?? null,
+        recentLimit: 2,
+      });
     } catch (err) {
       console.warn(
         "[coach-history] build failed:",
@@ -133,6 +147,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const measuredRange = parseVocalRange(recording.vocal_range);
     const locale = await getRequestLocale();
     const analysis = await analyzeVocalAudio({
       audioBase64: buffer.toString("base64"),
@@ -143,7 +158,12 @@ export async function POST(request: Request) {
       lyrics,
       coachHistory,
       locale,
+      measuredVocalRange: measuredRange,
     });
+    const vocalRange = mergeVocalRange(
+      measuredRange,
+      analysis.vocal_range ?? null
+    );
     const pitchScore = pitchReport
       ? pitchReport.pitchScore
       : analysis.pitch_score;
@@ -210,6 +230,7 @@ export async function POST(request: Request) {
       audioUrl = signed?.signedUrl ?? "";
     }
 
+    const coachSummary = analysis.coach_summary || null;
     const { error: updateError } = await supabase
       .from("recordings")
       .update({
@@ -222,6 +243,8 @@ export async function POST(request: Request) {
         dynamics_score: analysis.dynamics_score,
         ai_feedback_md: feedback,
         actionable_advice: analysis.actionable_advice,
+        ...(coachSummary ? { coach_summary: coachSummary } : {}),
+        ...(vocalRange ? { vocal_range: vocalRange } : {}),
         audio_url: audioUrl,
         storage_path: storagePath,
         share_audio: shareAudio,
@@ -231,10 +254,31 @@ export async function POST(request: Request) {
       .eq("user_id", user.id);
 
     if (updateError) {
+      const missingSummary = updateError.message?.includes("coach_summary");
+      const missingRange = updateError.message?.includes("vocal_range");
       return NextResponse.json(
-        { error: `更新失敗：${updateError.message}` },
+        {
+          error: missingSummary
+            ? "資料庫未有 coach_summary 欄。請喺 Supabase SQL Editor 執行 supabase/add-coach-summary.sql"
+            : missingRange
+              ? "資料庫未有 vocal_range 欄。請喺 Supabase SQL Editor 執行 supabase/add-vocal-range.sql"
+              : `更新失敗：${updateError.message}`,
+        },
         { status: 500 }
       );
+    }
+
+    if (coachSummary) {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ coach_summary: coachSummary })
+        .eq("id", user.id);
+      if (profileError) {
+        console.warn(
+          "[coach-summary] profile update failed:",
+          profileError.message
+        );
+      }
     }
 
     await pruneUserRecordingsToTopN(supabase, user.id, {

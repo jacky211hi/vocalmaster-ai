@@ -4,6 +4,10 @@ import { geminiLanguageInstruction } from "@/lib/i18n/gemini-locale";
 import { lyricsPrompt, type LyricMatch } from "@/lib/lyrics";
 import { coachPitchBrief } from "@/lib/pitch/report";
 import type { PitchReport } from "@/lib/pitch/score";
+import {
+  parseVocalRange,
+  type VocalRangeReport,
+} from "@/lib/pitch/vocal-range";
 import type { VocalAnalysisResult } from "@/lib/types";
 
 function buildSystemInstruction(locale: Locale): string {
@@ -41,8 +45,22 @@ Use level-3 headings for 2–4 drills:
 - **對應問題** / Targets:
 Pick varied drills by weakness (breath support, SOVT straw, sirens, humming, twang, pitch matching, metronome phrasing, messa di voce, etc.). Do not reuse recent exercise titles unless the same weakness did not improve — then escalate. Keep concise and executable.
 
+## coach_summary（AI-only rolling memory — NOT shown to the user）
+Write a short English bullet brief (max ~1200 characters) for the NEXT analysis call.
+Merge any existing ROLLING_COACH_SUMMARY with THIS session's outcome.
+Include: recurring strengths, stuck weaknesses, whether prior drills helped, exercise titles just assigned, what to prioritize next.
+Do not paste full reports. Plain text / short bullets only.
+
+## vocal_range（shown to the user）
+Estimate from the audio + song metadata:
+- lowest_note / highest_note: scientific pitch (e.g. "A3", "E5") of sustained sung notes; ignore noise/cracks.
+- song_key: likely original / published key of this song (e.g. "G major", "A minor") from song title + artist knowledge when known; otherwise best estimate from the accompaniment/melody if audible.
+- user_key: key the singer actually performed in (e.g. "F major").
+- key_shift_semitones: integer = user tonic minus song tonic (negative = sung lower). 0 if same key.
+If MEASURED_VOCAL_RANGE is provided, keep those lowest/highest unless clearly wrong; still fill song_key / user_key / key_shift_semitones.
+
 Return ONLY JSON:
-{"total_score":int,"timbre_score":int,"phonation_score":int,"pitch_score":int,"breath_score":int,"rhythm_score":int,"dynamics_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
+{"total_score":int,"timbre_score":int,"phonation_score":int,"pitch_score":int,"breath_score":int,"rhythm_score":int,"dynamics_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown","coach_summary":"string","vocal_range":{"lowest_note":"A3","highest_note":"E5","song_key":"G major","user_key":"F major","key_shift_semitones":-2}}`;
 }
 
 /**
@@ -66,6 +84,34 @@ function clampScore(n: unknown): number {
   return Math.max(0, Math.min(100, Math.round(v)));
 }
 
+function parseGeminiVocalRange(raw: unknown): Partial<VocalRangeReport> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const lowest_note = r.lowest_note != null ? String(r.lowest_note).trim() : "";
+  const highest_note =
+    r.highest_note != null ? String(r.highest_note).trim() : "";
+  const song_key = r.song_key != null ? String(r.song_key).trim() : "";
+  const user_key = r.user_key != null ? String(r.user_key).trim() : "";
+  const shift =
+    typeof r.key_shift_semitones === "number"
+      ? Math.round(r.key_shift_semitones)
+      : Number.isFinite(Number(r.key_shift_semitones))
+        ? Math.round(Number(r.key_shift_semitones))
+        : null;
+  if (!lowest_note && !highest_note && !song_key && !user_key) return null;
+  return {
+    version: 1,
+    lowest_note: lowest_note || null,
+    highest_note: highest_note || null,
+    lowest_midi: null,
+    highest_midi: null,
+    song_key: song_key || null,
+    user_key: user_key || null,
+    key_shift_semitones: shift,
+    source: "gemini",
+  };
+}
+
 function parseAnalysis(raw: string): VocalAnalysisResult {
   const cleaned = raw
     .replace(/^```json\s*/i, "")
@@ -74,6 +120,7 @@ function parseAnalysis(raw: string): VocalAnalysisResult {
     .trim();
   const data = JSON.parse(cleaned) as Partial<VocalAnalysisResult> & {
     mechanism_score?: number;
+    vocal_range?: unknown;
   };
   return {
     total_score: clampScore(data.total_score),
@@ -87,6 +134,8 @@ function parseAnalysis(raw: string): VocalAnalysisResult {
     dynamics_score: clampScore(data.dynamics_score),
     detailed_feedback: String(data.detailed_feedback ?? ""),
     actionable_advice: String(data.actionable_advice ?? ""),
+    coach_summary: String(data.coach_summary ?? "").trim().slice(0, 2500),
+    vocal_range: parseVocalRange(parseGeminiVocalRange(data.vocal_range)),
   };
 }
 
@@ -163,6 +212,7 @@ export async function analyzeVocalAudio(params: {
   lyrics?: LyricMatch | null;
   coachHistory?: string | null;
   locale?: Locale;
+  measuredVocalRange?: Partial<VocalRangeReport> | null;
 }): Promise<VocalAnalysisResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -178,14 +228,25 @@ export async function analyzeVocalAudio(params: {
   const history = params.coachHistory
     ? `\n${params.coachHistory}\n`
     : "";
+  const rangeHint = params.measuredVocalRange
+    ? `\nMEASURED_VOCAL_RANGE (from local pitch detector — prefer for lowest/highest):\n${JSON.stringify(
+        {
+          lowest_note: params.measuredVocalRange.lowest_note,
+          highest_note: params.measuredVocalRange.highest_note,
+          user_key: params.measuredVocalRange.user_key,
+        }
+      )}\n`
+    : "";
   const userPrompt = `Song: ${params.songName}
 Artist: ${params.artist || "Unknown"}
-${lyrics}${measured}${history}
+${lyrics}${measured}${rangeHint}${history}
 Listen carefully to the full clip. Section times are on the user's recording, starting at 0:00.
 In detailed_feedback, mark which time ranges went well vs poorly.
 If OFFICIAL_LYRICS are present, quote those lines exactly in the section titles. Do not transcribe lyrics from the audio.
-If USER_COACH_HISTORY is present: briefly note progress or stuck weaknesses vs past sessions; for actionable_advice prioritize recurring weak dimensions, avoid repeating prior exercise titles when possible, and escalate if the same issue persists.
-Follow the LANGUAGE rule in the system instruction for all written fields.
+If USER_COACH_HISTORY / ROLLING_COACH_SUMMARY is present: use it as long-term memory; briefly note progress or stuck weaknesses; for actionable_advice prioritize recurring weak dimensions, avoid repeating prior exercise titles when possible, and escalate if the same issue persists.
+Always return coach_summary (English, AI-only) updated for the next session.
+Always return vocal_range (lowest/highest notes, song_key, user_key, key_shift_semitones).
+Follow the LANGUAGE rule in the system instruction for detailed_feedback and actionable_advice (coach_summary stays English; vocal_range note/key labels stay in English pitch notation).
 Then give actionable_advice exercises tied to this clip's weak moments and this user's history.
 Return the JSON evaluation.`;
 

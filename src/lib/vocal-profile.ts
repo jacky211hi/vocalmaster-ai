@@ -3,6 +3,11 @@ import {
   SCORE_DIMENSIONS,
   type DimensionKey,
 } from "@/lib/score-dimensions";
+import {
+  aggregateVocalRanges,
+  parseVocalRange,
+  type AggregateVocalRange,
+} from "@/lib/pitch/vocal-range";
 import type { Recording } from "@/lib/types";
 
 const DIMENSIONS = SCORE_DIMENSIONS.map(({ key, label, short }) => ({
@@ -23,6 +28,7 @@ export type VocalProfileInsight = {
   focusTips: string[];
   trendLabel: string;
   trendDelta: number | null;
+  vocalRange: AggregateVocalRange | null;
 };
 
 function avg(nums: number[]): number {
@@ -97,6 +103,10 @@ export function buildVocalProfile(list: Recording[]): VocalProfileInsight | null
     }
   }
 
+  const vocalRange = aggregateVocalRanges(
+    done.map((r) => parseVocalRange(r.vocal_range))
+  );
+
   return {
     sampleCount: done.length,
     averages,
@@ -109,6 +119,7 @@ export function buildVocalProfile(list: Recording[]): VocalProfileInsight | null
     focusTips,
     trendLabel,
     trendDelta,
+    vocalRange,
   };
 }
 

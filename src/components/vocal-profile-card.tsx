@@ -1,6 +1,7 @@
 import { Sparkles, TrendingUp, Target, Waves } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProfileRangeBlock } from "@/components/vocal-range-panel";
 import {
   DIMENSIONS,
   type VocalProfileInsight,
@@ -66,6 +67,13 @@ export function VocalProfileCard({
               <TrendingUp className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               {insight.trendLabel}
             </p>
+            {insight.vocalRange ? (
+              <ProfileRangeBlock range={insight.vocalRange} />
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 p-3 text-xs text-white/40">
+                音域分析會喺新錄音完成後出現（最高／最低音）。舊紀錄可能未有資料。
+              </div>
+            )}
           </CardContent>
         </Card>
 

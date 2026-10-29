@@ -4,6 +4,11 @@ import { ANALYZING_MARKER } from "@/lib/analysis-status";
 import { isExerciseId } from "@/lib/pitch/exercises";
 import { scoreExerciseById, type PitchReport } from "@/lib/pitch/score";
 import { decodeWav } from "@/lib/pitch/wav";
+import {
+  mergeVocalRange,
+  parseVocalRange,
+  type VocalRangeReport,
+} from "@/lib/pitch/vocal-range";
 
 export const maxDuration = 30;
 
@@ -98,6 +103,9 @@ export async function POST(request: Request) {
 
     const exerciseRaw = String(body.exercise_id ?? "").trim();
     let pitchReport: PitchReport | null = null;
+    let vocalRange: VocalRangeReport | null = parseVocalRange(
+      body.vocal_range
+    );
     if (exerciseRaw) {
       if (!isExerciseId(exerciseRaw)) {
         return NextResponse.json({ error: "未知練習" }, { status: 400 });
@@ -127,6 +135,22 @@ export async function POST(request: Request) {
           exerciseRaw,
           tonic
         );
+        const midis = pitchReport.notes.map((n) => n.midi);
+        if (midis.length > 0) {
+          const lo = Math.min(...midis);
+          const hi = Math.max(...midis);
+          vocalRange = mergeVocalRange(vocalRange, {
+            version: 1,
+            lowest_midi: lo,
+            highest_midi: hi,
+            lowest_note: null,
+            highest_note: null,
+            song_key: null,
+            user_key: null,
+            key_shift_semitones: null,
+            source: "measured",
+          });
+        }
       } catch (err) {
         return NextResponse.json(
           { error: err instanceof Error ? err.message : "音準計分失敗" },
@@ -157,17 +181,21 @@ export async function POST(request: Request) {
         ai_feedback_md: ANALYZING_MARKER,
         actionable_advice: "",
         ...(pitchReport ? { pitch_report: pitchReport } : {}),
+        ...(vocalRange ? { vocal_range: vocalRange } : {}),
       })
       .select("id")
       .single();
 
     if (insertError || !recording) {
-      const missingColumn = insertError?.message?.includes("pitch_report");
+      const missingPitch = insertError?.message?.includes("pitch_report");
+      const missingRange = insertError?.message?.includes("vocal_range");
       return NextResponse.json(
         {
-          error: missingColumn
+          error: missingPitch
             ? "資料庫未有 pitch_report 欄。請喺 Supabase SQL Editor 執行 supabase/add-pitch-report.sql"
-            : `儲存失敗：${insertError?.message ?? "unknown"}`,
+            : missingRange
+              ? "資料庫未有 vocal_range 欄。請喺 Supabase SQL Editor 執行 supabase/add-vocal-range.sql"
+              : `儲存失敗：${insertError?.message ?? "unknown"}`,
         },
         { status: 500 }
       );

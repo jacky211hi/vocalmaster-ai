@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/components/locale-provider";
+import { measureVocalRangeFromFile } from "@/lib/pitch/vocal-range";
 
 function extForFile(file: File): string {
   const name = file.name.toLowerCase();
@@ -82,7 +83,7 @@ export default function SingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [mode, setMode] = useState<"exercise" | "free">("exercise");
+  const [mode, setMode] = useState<"exercise" | "free">("free");
 
   async function uploadRecording(opts: {
     file: File;
@@ -134,8 +135,17 @@ export default function SingPage() {
       }
 
       setStatus(
-        opts.exerciseId ? "計算音準並建立分析…" : "建立分析任務…"
+        opts.exerciseId ? "計算音準並建立分析…" : "量度音域並建立分析…"
       );
+
+      let vocalRange = null;
+      if (!opts.exerciseId) {
+        try {
+          vocalRange = await measureVocalRangeFromFile(opts.file);
+        } catch {
+          vocalRange = null;
+        }
+      }
 
       const res = await fetch("/api/analyze-vocal", {
         method: "POST",
@@ -147,6 +157,7 @@ export default function SingPage() {
           mime_type: mimeType,
           exercise_id: opts.exerciseId,
           tonic_midi: opts.tonicMidi,
+          ...(vocalRange ? { vocal_range: vocalRange } : {}),
         }),
       });
 
@@ -202,6 +213,17 @@ export default function SingPage() {
           <button
             type="button"
             disabled={loading}
+            onClick={() => setMode("free")}
+            className={cn(
+              "rounded-xl px-4 py-2 text-sm font-medium",
+              mode === "free" ? "bg-amber-400 text-slate-950" : "text-white/60"
+            )}
+          >
+            {t("sing.mode.free")}
+          </button>
+          <button
+            type="button"
+            disabled={loading}
             onClick={() => setMode("exercise")}
             className={cn(
               "rounded-xl px-4 py-2 text-sm font-medium",
@@ -211,17 +233,6 @@ export default function SingPage() {
             )}
           >
             {t("sing.mode.exercise")}
-          </button>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => setMode("free")}
-            className={cn(
-              "rounded-xl px-4 py-2 text-sm font-medium",
-              mode === "free" ? "bg-amber-400 text-slate-950" : "text-white/60"
-            )}
-          >
-            {t("sing.mode.free")}
           </button>
         </div>
 

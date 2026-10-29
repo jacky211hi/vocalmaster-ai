@@ -56,7 +56,7 @@ const messages = {
     "result.total": "Total Score",
 
     "sing.title": "準備練歌",
-    "sing.desc": "跟譜練習練完即棄。自由錄音先會交俾 Gemini 出六維報告同排行榜。",
+    "sing.desc": "自由錄音會交俾 Gemini 出六維報告同排行榜。跟譜練習練完即棄。",
     "sing.mode.exercise": "跟譜練習",
     "sing.mode.free": "自由錄音",
     "sing.card.exercise": "跟譜計分",
@@ -183,7 +183,7 @@ const messages = {
 
     "sing.title": "準備練歌",
     "sing.desc":
-      "跟譜練習結束後不會保存。自由錄音會交給 Gemini 產出六維報告並進入排行榜。",
+      "自由錄音會交給 Gemini 產出六維報告並進入排行榜。跟譜練習結束後不會保存。",
     "sing.mode.exercise": "跟譜練習",
     "sing.mode.free": "自由錄音",
     "sing.card.exercise": "跟譜計分",
@@ -312,7 +312,7 @@ const messages = {
 
     "sing.title": "Ready to sing",
     "sing.desc":
-      "Follow-along drills are discarded after practice. Free recordings go to Gemini for a six-dimension report and the leaderboard.",
+      "Free recordings go to Gemini for a six-dimension report and the leaderboard. Follow-along drills are discarded after practice.",
     "sing.mode.exercise": "Follow-along",
     "sing.mode.free": "Free recording",
     "sing.card.exercise": "Pitch drill scoring",

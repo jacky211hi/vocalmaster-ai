@@ -7,6 +7,7 @@ create table if not exists public.profiles (
   email text not null,
   username text not null unique,
   avatar_url text default 'mic',
+  coach_summary text,
   created_at timestamptz not null default now()
 );
 
@@ -29,7 +30,9 @@ create table if not exists public.recordings (
   dynamics_score integer not null default 0 check (dynamics_score between 0 and 100),
   ai_feedback_md text not null default '',
   actionable_advice text not null default '',
+  coach_summary text,
   pitch_report jsonb,
+  vocal_range jsonb,
   created_at timestamptz not null default now()
 );
 

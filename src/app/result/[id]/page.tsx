@@ -23,7 +23,9 @@ import { isAnalyzingFeedback } from "@/lib/analysis-status";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { translate } from "@/lib/i18n/messages";
 import { parsePitchReport } from "@/lib/pitch/report";
+import { parseVocalRange } from "@/lib/pitch/vocal-range";
 import { PitchReportPanel } from "@/components/pitch-report-panel";
+import { VocalRangePanel } from "@/components/vocal-range-panel";
 import type { Recording } from "@/lib/types";
 
 export default async function ResultPage({
@@ -85,6 +87,7 @@ export default async function ResultPage({
       : t("result.back.practice");
   const analyzing = isAnalyzingFeedback(recording.ai_feedback_md);
   const pitchReport = parsePitchReport(recording.pitch_report);
+  const vocalRange = parseVocalRange(recording.vocal_range);
   const hasStoredAudio = Boolean(
     recording.storage_path || recording.audio_url
   );
@@ -208,6 +211,8 @@ export default async function ResultPage({
         </div>
 
         {pitchReport && <PitchReportPanel report={pitchReport} />}
+
+        {!analyzing && vocalRange && <VocalRangePanel report={vocalRange} />}
 
         {analyzing && isOwner ? (
           <AnalysisRunner recordingId={recording.id} />

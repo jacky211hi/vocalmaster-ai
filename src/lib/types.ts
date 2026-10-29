@@ -1,4 +1,5 @@
 import type { PitchReport } from "@/lib/pitch/score";
+import type { VocalRangeReport } from "@/lib/pitch/vocal-range";
 
 export type Recording = {
   id: string;
@@ -18,7 +19,9 @@ export type Recording = {
   dynamics_score: number;
   ai_feedback_md: string;
   actionable_advice: string;
+  coach_summary?: string | null;
   pitch_report?: PitchReport | null;
+  vocal_range?: VocalRangeReport | null;
   created_at: string;
 };
 
@@ -27,6 +30,7 @@ export type Profile = {
   email: string;
   username: string;
   avatar_url?: string | null;
+  coach_summary?: string | null;
   created_at: string;
 };
 
@@ -43,6 +47,9 @@ export type VocalAnalysisResult = DimensionScores & {
   total_score: number;
   detailed_feedback: string;
   actionable_advice: string;
+  /** AI-only rolling memory for the next session; not shown in the UI. */
+  coach_summary: string;
+  vocal_range?: VocalRangeReport | null;
 };
 
 export type LeaderboardEntry = {

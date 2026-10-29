@@ -48,10 +48,18 @@ const rows: CoachHistoryRow[] = [
   },
 ];
 
-const brief = coachHistoryPrompt(rows);
-assert(brief && brief.includes("USER_COACH_HISTORY"), "history header");
-assert(brief!.includes("唇震音"), "lists prior drill");
-assert(brief!.includes("Usually weakest"), "weakest dim");
-assert(brief!.includes("像風一樣"), "includes recent song");
+const withSummary = coachHistoryPrompt(rows, {
+  rollingSummary:
+    "Stuck on breath support. Last drills: lip trill. Avoid repeating lip trill title.",
+});
+assert(withSummary?.includes("ROLLING_COACH_SUMMARY"), "rolling header");
+assert(withSummary!.includes("Stuck on breath"), "includes summary");
+assert(withSummary!.includes("像風一樣"), "includes recent song");
+assert(!withSummary!.includes("喉位偏高"), "does not dump old risk prose");
+
+const bootstrap = coachHistoryPrompt(rows);
+assert(bootstrap?.includes("none yet"), "bootstrap without summary");
+
+assert(coachHistoryPrompt([]) == null, "empty history");
 
 console.log("coach-history ok");
