@@ -90,9 +90,10 @@ const messages = {
     "comments.title": "留言",
     "comments.deleteConfirm": "確定刪除呢條留言？",
 
-    "analysis.keepOpen": "通常 20–60 秒。請唔好關閉頁面。",
+    "analysis.keepOpen": "分析可能需要一兩分鐘，請唔好關閉頁面。",
     "analysis.retryHint":
       "分析已觸發過。如果未完成，請撳下面重試（注意免費額度有限）。",
+    "analysis.timeout": "分析逾時，請稍後再試。",
 
     "auth.welcomeBack": "歡迎回來",
     "auth.createAccount": "建立帳戶",
@@ -216,9 +217,10 @@ const messages = {
     "comments.title": "留言",
     "comments.deleteConfirm": "確定刪除這則留言？",
 
-    "analysis.keepOpen": "通常 20–60 秒。請不要關閉頁面。",
+    "analysis.keepOpen": "分析可能需要一兩分鐘，請不要關閉頁面。",
     "analysis.retryHint":
       "分析已觸發過。若尚未完成，請點下方重試（注意免費額度有限）。",
+    "analysis.timeout": "分析逾時，請稍後再試。",
 
     "auth.welcomeBack": "歡迎回來",
     "auth.createAccount": "建立帳戶",
@@ -348,9 +350,10 @@ const messages = {
     "comments.title": "Comments",
     "comments.deleteConfirm": "Delete this comment?",
 
-    "analysis.keepOpen": "Usually 20–60 seconds. Please keep this page open.",
+    "analysis.keepOpen": "Analysis may take a minute or two. Please keep this page open.",
     "analysis.retryHint":
       "Analysis was already started. If it is stuck, retry below (free quota is limited).",
+    "analysis.timeout": "Analysis timed out. Please try again shortly.",
 
     "auth.welcomeBack": "Welcome back",
     "auth.createAccount": "Create account",

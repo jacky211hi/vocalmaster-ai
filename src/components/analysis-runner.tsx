@@ -39,7 +39,7 @@ export function AnalysisRunner({ recordingId }: { recordingId: string }) {
         throw new Error(
           data.error ||
             (res.status === 504
-              ? "分析逾時（伺服器限制約 60 秒）。請用較短錄音再試。"
+              ? t("analysis.timeout")
               : `分析失敗（HTTP ${res.status}）`)
         );
       }

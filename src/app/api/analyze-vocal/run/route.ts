@@ -15,7 +15,7 @@ import { getRequestLocale } from "@/lib/i18n/server";
 import { lookupLyrics } from "@/lib/lyrics";
 import { measuredMarkdown, parsePitchReport } from "@/lib/pitch/report";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const ALLOWED_MIME = new Set([
   "audio/mpeg",
