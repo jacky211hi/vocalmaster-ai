@@ -16,6 +16,7 @@ import {
 } from "@/components/comments-section";
 import { AnalysisRunner } from "@/components/analysis-runner";
 import { AdviceBlock } from "@/components/advice-block";
+import { SecureAudioPlayer } from "@/components/secure-audio-player";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { areAcceptedFriends } from "@/lib/friends";
@@ -210,9 +211,11 @@ export default async function ResultPage({
           </div>
         </div>
 
-        {pitchReport && <PitchReportPanel report={pitchReport} />}
+        {isOwner && pitchReport && <PitchReportPanel report={pitchReport} />}
 
-        {!analyzing && vocalRange && <VocalRangePanel report={vocalRange} />}
+        {isOwner && !analyzing && vocalRange && (
+          <VocalRangePanel report={vocalRange} />
+        )}
 
         {analyzing && isOwner ? (
           <AnalysisRunner recordingId={recording.id} />
@@ -227,7 +230,11 @@ export default async function ResultPage({
             <Card className="mb-6">
               <CardContent className="space-y-4 py-4">
                 {playUrl ? (
-                  <audio src={playUrl} controls className="w-full" />
+                  <SecureAudioPlayer
+                    src={playUrl}
+                    allowDownload={isOwner}
+                    className="w-full"
+                  />
                 ) : hasStoredAudio && !isOwner ? (
                   <p className="flex items-center gap-2 text-sm text-white/50">
                     <Headphones className="h-4 w-4 shrink-0" />
@@ -267,30 +274,34 @@ export default async function ResultPage({
               </Card>
             </div>
 
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>{t("result.report")}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="prose-vocal">
-                  <ReactMarkdown>
-                    {recording.ai_feedback_md || "暫無詳細報告。"}
-                  </ReactMarkdown>
-                </div>
-              </CardContent>
-            </Card>
+            {isOwner && (
+              <>
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>{t("result.report")}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="prose-vocal">
+                      <ReactMarkdown>
+                        {recording.ai_feedback_md || "暫無詳細報告。"}
+                      </ReactMarkdown>
+                    </div>
+                  </CardContent>
+                </Card>
 
-            <Card className="mb-6 border-amber-400/25 bg-gradient-to-br from-amber-400/10 via-white/[0.03] to-transparent">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-amber-200">
-                  <Lightbulb className="h-5 w-5" />
-                  {t("result.advice")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <AdviceBlock markdown={recording.actionable_advice || ""} />
-              </CardContent>
-            </Card>
+                <Card className="mb-6 border-amber-400/25 bg-gradient-to-br from-amber-400/10 via-white/[0.03] to-transparent">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-amber-200">
+                      <Lightbulb className="h-5 w-5" />
+                      {t("result.advice")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <AdviceBlock markdown={recording.actionable_advice || ""} />
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
             <CommentsSection
               recordingId={recording.id}
