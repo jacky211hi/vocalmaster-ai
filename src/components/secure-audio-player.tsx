@@ -18,7 +18,7 @@ export function SecureAudioPlayer({
     <audio
       src={src}
       controls
-      controlsList={allowDownload ? undefined : "nodownload"}
+      controlsList={allowDownload ? undefined : "nodownload noplaybackrate"}
       onContextMenu={
         allowDownload
           ? undefined
