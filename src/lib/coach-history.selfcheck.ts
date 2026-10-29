@@ -56,10 +56,13 @@ assert(withSummary?.includes("ROLLING_COACH_SUMMARY"), "rolling header");
 assert(withSummary!.includes("ADVICE ONLY"), "history advice-only banner");
 assert(withSummary!.includes("Stuck on breath"), "includes summary");
 assert(withSummary!.includes("像風一樣"), "includes recent song");
+assert(withSummary!.includes("### 個人進度"), "requires personal progress heading");
+assert(withSummary!.includes("Recurring weaker dims"), "weak dims line");
 assert(!withSummary!.includes("喉位偏高"), "does not dump old risk prose");
 
 const bootstrap = coachHistoryPrompt(rows);
 assert(bootstrap?.includes("ROLLING_COACH_SUMMARY: (none)"), "bootstrap without summary");
+assert(bootstrap!.includes("### 個人進度"), "bootstrap still requires progress");
 
 assert(coachHistoryPrompt([]) == null, "empty history");
 

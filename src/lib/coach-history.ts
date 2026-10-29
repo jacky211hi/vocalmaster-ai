@@ -46,6 +46,36 @@ function scoreLine(row: CoachHistoryRow): string {
   return `total=${row.total_score} ${parts}`;
 }
 
+/** Average the weakest 1–2 dimensions across recent rows (for personal advice). */
+export function recurringWeakDims(
+  rows: CoachHistoryRow[],
+  topN = 2
+): string[] {
+  const totals = new Map<string, { sum: number; n: number; short: string }>();
+  for (const dim of SCORE_DIMENSIONS) {
+    totals.set(dim.key, { sum: 0, n: 0, short: dim.short });
+  }
+  for (const row of rows) {
+    for (const dim of SCORE_DIMENSIONS) {
+      const v = row[dim.key] as number;
+      if (typeof v !== "number" || v <= 0) continue;
+      const slot = totals.get(dim.key)!;
+      slot.sum += v;
+      slot.n += 1;
+    }
+  }
+  return [...totals.entries()]
+    .filter(([, s]) => s.n > 0)
+    .map(([key, s]) => ({
+      key,
+      short: s.short,
+      avg: s.sum / s.n,
+    }))
+    .sort((a, b) => a.avg - b.avg)
+    .slice(0, topN)
+    .map((d) => `${d.short}(avg~${Math.round(d.avg)})`);
+}
+
 /**
  * Slim history for Gemini: rolling coach_summary + last 1–2 score snapshots.
  * Avoids re-sending full past reports/advice bodies.
@@ -82,6 +112,21 @@ export function coachHistoryPrompt(
       recent.flatMap((r) => extractExerciseNames(r.actionable_advice || ""))
     ),
   ].slice(0, 8);
+  const weak = recurringWeakDims(recent.length ? recent : done, 2);
+  const latest = recent[0];
+  const previous = recent[1];
+  const trend =
+    latest && previous
+      ? `Latest total ${latest.total_score} vs previous ${previous.total_score} (${
+          latest.total_score - previous.total_score >= 3
+            ? "up"
+            : previous.total_score - latest.total_score >= 3
+              ? "down"
+              : "flat"
+        }).`
+      : latest
+        ? `Latest total ${latest.total_score} (only one prior snapshot).`
+        : null;
 
   return [
     "USER_COACH_HISTORY (ADVICE ONLY — never for scores or timed diagnosis):",
@@ -89,20 +134,25 @@ export function coachHistoryPrompt(
     "Do NOT anchor near past scores. A 90+ take must score 90+ even if past takes were ~60–75.",
     rolling
       ? [
-          "ROLLING_COACH_SUMMARY (for actionable_advice / coach_summary update only):",
+          "ROLLING_COACH_SUMMARY (personal long-term memory for advice + coach_summary update):",
           rolling.slice(0, 2500),
         ].join("\n")
       : "ROLLING_COACH_SUMMARY: (none).",
     recent.length
       ? `Recent score snapshots (advice context only, max ${recentLimit}):\n${sessionLines.join("\n")}`
       : "Recent score snapshots: none.",
-    priorExercises.length
-      ? `Recent exercise titles to avoid repeating in actionable_advice unless THIS clip shows the same fault: ${priorExercises.join("；")}`
+    weak.length
+      ? `Recurring weaker dims for THIS singer (from recent snapshots): ${weak.join(", ")}.`
       : null,
-    "History rules:",
-    "- Never claim the singer is still stuck on a past flaw unless THIS clip clearly shows it.",
-    "- Use history only at the end in actionable_advice to compare progress / pick next drills.",
-    "- Update coach_summary from THIS session's objective outcome.",
+    trend,
+    priorExercises.length
+      ? `Recent exercise titles — evolve or escalate; do not copy-paste the same title unless THIS clip shows the same fault: ${priorExercises.join("；")}`
+      : null,
+    "REQUIRED in actionable_advice when any history above exists:",
+    "1) Start with heading ### 個人進度 (or ### Personal progress / ### 個人進度對比) — 2–4 sentences naming THIS singer's pattern, comparing THIS take vs latest snapshot (cite song + totals/dims), and what to focus next.",
+    "2) Then 2–4 drill ### headings tailored to THIS clip's faults AND the recurring weak dims above.",
+    "3) Never claim still-stuck unless THIS clip clearly shows the same fault.",
+    "4) Update coach_summary from THIS session's objective outcome.",
   ]
     .filter(Boolean)
     .join("\n");

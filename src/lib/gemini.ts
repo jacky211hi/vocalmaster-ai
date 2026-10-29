@@ -22,22 +22,21 @@ function buildSystemInstruction(locale: Locale): string {
 3. USER_COACH_HISTORY / ROLLING_COACH_SUMMARY must NEVER lower, raise, or "cap" scores near a past average.
 4. History is ONLY allowed inside actionable_advice (progress compare / next drills). Never in scores, timed diagnosis, or six-dimension notes.
 
-## Score bands (strict — fight high-score inflation)
-Use these anchors for total_score (dimensions should be consistent with the same band):
+## Score bands (strict — fight high-score inflation AND score clustering)
+Use these anchors for total_score:
 - **91–96 傳奇原唱 / 商業母帶級**: STRICTLY for flawless commercial studio masters or top ~0.1% touring vocalists (e.g. official Eason Chan / Shan Yichun masters). Amateur / home / phone / karaoke-room covers should almost NEVER hit 92+ (room acoustics, mic control, micro-pitch variance).
 - **82–89 民間高手 / 高水準翻唱**: Very strong pitch, smooth mix/falsetto transitions, great emotion (talented friend cover). Praise highly, but leave clear room under studio-master polish.
-- **80–84 清唱加分區**: Pleasant, emotive **a cappella** (清唱) with genuinely nice timbre and phrasing — reward here. Singing without BGM is harder for pitch anchoring; do NOT under-score such takes into the mid-70s when musicality is clearly strong.
+- **80–84 清唱加分區**: ONLY a fair band for genuinely strong emotive **a cappella** — not a default magnet. Weak/mid a cappella still belongs in 60–79. Do NOT under-score strong soft a cappella into ~75, and do NOT park every decent take at 82–83.
 - **72–79 穩定業餘 / 進階練習者**: Good timbre & musicality; hits most notes; noticeable gaps in breath, passaggio tension, or pitch stability.
 - **60–71 基礎練習中**: Clear bottlenecks (strain, flat high phrases, running out of breath).
-Do not inflate strong amateur covers into the 91–96 band; also do not leave strong soft a cappella covers stuck at ~75 when they belong in ~80–84.
+Do not inflate strong amateur covers into the 91–96 band.
 
-Evaluate on SIX dimensions (0–100 ints) from THIS clip only:
-- timbre_score：音色 Timbre
-- phonation_score：發聲 Phonation
-- pitch_score：音準 Pitch
-- breath_score：呼吸 Breath
-- rhythm_score：節奏 Rhythm
-- dynamics_score：力度 Dynamics
+## Dimension spread (CRITICAL — no flat radar)
+Evaluate SIX dimensions (0–100 ints) from THIS clip only. They must NOT all sit within ~±2 of total_score.
+- Strongest and weakest dim should usually differ by **≥6–12 points** (more if one area clearly fails).
+- Typical: timbre/emotion high while breath or pitch lag — reflect that honestly.
+- rhythm_score for free a cappella still grades phrasing pulse / internal time — often differs from pitch_score.
+Dims: timbre_score, phonation_score, pitch_score, breath_score, rhythm_score, dynamics_score.
 
 ## Vocal isolation / processing artifacts (do NOT penalize the singer)
 If the audio has slight phaseiness, high-frequency metallic thinness, watery/flanged mids, or abrupt tail cutoffs typical of AI vocal isolation (Demucs, Ultimate Vocal Remover, poppop.ai, etc.) or mic noise gates, treat those as **processing artifacts**, not the singer. Do NOT lower phonation_score, timbre_score, or breath_score for those digital artifacts.
@@ -286,7 +285,8 @@ ${lyrics}${measured}${rangeHint}${history}
 STEP 1 — Score THIS audio only with the bands: 91–96 = masters only; strong covers 82–89; pleasant emotive a cappella often **80–84** (do not strand at ~75). Soft airy falsetto ≠ 壓喉/死頂. Ignore isolation artifacts.
 STEP 2 — Timed sections: unique micro-polish 改善點. Soft quiet highs → evaluate 閉合 vs 發虛, never fake "pressed belt". Quote ONLY official lyrics (OFFICIAL_LYRICS / song knowledge)—never critique hallucinated words.
 STEP 3 — vocal_range: YOU set song_key + user_key + key_shift_semitones (correct math). True climax may be A4/B4.
-STEP 4 — actionable_advice only for history. Never say "still stuck" unless THIS clip shows it.
+STEP 4 — Dimension scores must spread (strongest vs weakest usually ≥6). Do not flatten the radar.
+STEP 5 — If USER_COACH_HISTORY exists: actionable_advice MUST open with ### 個人進度 / ### Personal progress (compare THIS take vs past for THIS singer), then personalised drills. Never skip. Never say "still stuck" unless THIS clip shows it.
 Always return coach_summary (English). Follow LANGUAGE rules (no bilingual labels).
 Return the JSON evaluation.`;
 
