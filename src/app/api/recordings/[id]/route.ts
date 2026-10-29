@@ -16,10 +16,23 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await request.json()) as { share_audio?: boolean };
-    if (typeof body.share_audio !== "boolean") {
+    const body = (await request.json()) as {
+      share_audio?: boolean;
+      share_audio_friends?: boolean;
+    };
+    const patch: {
+      share_audio?: boolean;
+      share_audio_friends?: boolean;
+    } = {};
+    if (typeof body.share_audio === "boolean") {
+      patch.share_audio = body.share_audio;
+    }
+    if (typeof body.share_audio_friends === "boolean") {
+      patch.share_audio_friends = body.share_audio_friends;
+    }
+    if (Object.keys(patch).length === 0) {
       return NextResponse.json(
-        { error: "請提供 share_audio（true／false）" },
+        { error: "請提供 share_audio 或 share_audio_friends（true／false）" },
         { status: 400 }
       );
     }
@@ -40,7 +53,9 @@ export async function PATCH(
       return NextResponse.json({ error: "只能修改自己的錄音" }, { status: 403 });
     }
 
-    if (body.share_audio && !recording.storage_path && !recording.audio_url) {
+    const enabling =
+      patch.share_audio === true || patch.share_audio_friends === true;
+    if (enabling && !recording.storage_path && !recording.audio_url) {
       return NextResponse.json(
         { error: "此錄音沒有保存音檔，無法分享到排行榜" },
         { status: 400 }
@@ -49,20 +64,31 @@ export async function PATCH(
 
     const { data: updated, error: updateError } = await supabase
       .from("recordings")
-      .update({ share_audio: body.share_audio })
+      .update(patch)
       .eq("id", id)
       .eq("user_id", user.id)
-      .select("id, share_audio")
+      .select("id, share_audio, share_audio_friends")
       .single();
 
     if (updateError) {
+      const missingFriends = updateError.message?.includes(
+        "share_audio_friends"
+      );
       return NextResponse.json(
-        { error: `更新失敗：${updateError.message}` },
+        {
+          error: missingFriends
+            ? "資料庫未有 share_audio_friends 欄。請喺 Supabase SQL Editor 執行 supabase/add-share-audio-friends.sql"
+            : `更新失敗：${updateError.message}`,
+        },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ ok: true, share_audio: updated.share_audio });
+    return NextResponse.json({
+      ok: true,
+      share_audio: updated.share_audio,
+      share_audio_friends: updated.share_audio_friends,
+    });
   } catch (err) {
     console.error("patch recording error:", err);
     return NextResponse.json(

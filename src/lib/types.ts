@@ -8,6 +8,7 @@ export type Recording = {
   audio_url: string;
   storage_path?: string | null;
   share_audio?: boolean;
+  share_audio_friends?: boolean;
   total_score: number;
   timbre_score: number;
   phonation_score: number;

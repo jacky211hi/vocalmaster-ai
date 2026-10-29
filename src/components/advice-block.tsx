@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Square, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/locale-provider";
 import {
   ADVICE_SAMPLE_RATE,
   demoForSection,
@@ -16,6 +17,7 @@ type Props = {
 };
 
 export function AdviceBlock({ markdown }: Props) {
+  const { t } = useI18n();
   const sections = splitAdvice(markdown);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -68,7 +70,7 @@ export function AdviceBlock({ markdown }: Props) {
   }
 
   if (sections.length === 0) {
-    return <p className="text-white/60">暫無具體練習建議。</p>;
+    return <p className="text-white/60">{t("advice.empty")}</p>;
   }
 
   return (
@@ -91,7 +93,7 @@ export function AdviceBlock({ markdown }: Props) {
                   ) : (
                     <Volume2 className="h-3.5 w-3.5" />
                   )}
-                  {playingId === demo.id ? "停止" : "聽示範"}
+                  {playingId === demo.id ? t("advice.stop") : t("advice.listen")}
                 </Button>
                 <p className="text-xs text-white/45">{demo.label}</p>
               </div>
@@ -99,7 +101,7 @@ export function AdviceBlock({ markdown }: Props) {
           </section>
         );
       })}
-      <p className="text-xs text-white/35">示範係合成男聲，用嚟聽音高同節奏，唔係真人錄音。</p>
+      <p className="text-xs text-white/35">{t("advice.synthNote")}</p>
     </div>
   );
 }

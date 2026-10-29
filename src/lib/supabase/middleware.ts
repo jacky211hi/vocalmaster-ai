@@ -31,6 +31,7 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthPage = path.startsWith("/login");
+  const isResetPassword = path.startsWith("/reset-password");
   const isProtected =
     path.startsWith("/dashboard") ||
     path.startsWith("/sing") ||
@@ -46,7 +47,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthPage) {
+  // Recovery sessions land on /reset-password — do not bounce them to dashboard.
+  if (user && isAuthPage && !isResetPassword) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

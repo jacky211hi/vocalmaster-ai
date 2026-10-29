@@ -1,3 +1,5 @@
+import { Converter } from "opencc-js/t2cn";
+
 export type LyricMatch = {
   track: string;
   artist: string;
@@ -6,17 +8,27 @@ export type LyricMatch = {
 };
 
 type LyricHit = {
+  id?: number;
   trackName?: string;
   artistName?: string;
+  albumName?: string;
   plainLyrics?: string | null;
   syncedLyrics?: string | null;
 };
 
+/** Canonicalize Traditional → Simplified so LRCLIB metadata matches HK/TW input. */
+const toSimplified = Converter({ from: "t", to: "cn" });
+
 function norm(value: string): string {
-  return value
+  return toSimplified(value)
     .toLowerCase()
     .replace(/[（(].*?[)）]/g, "")
     .replace(/[\s'’"“”·・,，.。!！?？\-—_]/g, "");
+}
+
+function hitKey(hit: LyricHit): string {
+  if (hit.id != null) return `id:${hit.id}`;
+  return `t:${hit.trackName ?? ""}|a:${hit.artistName ?? ""}|al:${hit.albumName ?? ""}`;
 }
 
 export function pickLyricHit(
@@ -49,6 +61,50 @@ export function pickLyricHit(
   return best.hit;
 }
 
+async function fetchLrclibSearch(params: {
+  trackName?: string;
+  artistName?: string;
+  q?: string;
+}): Promise<LyricHit[]> {
+  const url = new URL("https://lrclib.net/api/search");
+  if (params.q) {
+    url.searchParams.set("q", params.q);
+  } else {
+    if (params.trackName) url.searchParams.set("track_name", params.trackName);
+    if (params.artistName) url.searchParams.set("artist_name", params.artistName);
+  }
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "VocalMasterAI/1.0 (vocal coaching lyric alignment)",
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+    });
+    if (!response.ok) return [];
+    const hits = (await response.json()) as LyricHit[];
+    return Array.isArray(hits) ? hits : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeHits(...batches: LyricHit[][]): LyricHit[] {
+  const seen = new Set<string>();
+  const out: LyricHit[] = [];
+  for (const batch of batches) {
+    for (const hit of batch) {
+      const key = hitKey(hit);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(hit);
+    }
+  }
+  return out;
+}
+
 export async function lookupLyrics(
   song: string,
   artist: string
@@ -57,21 +113,32 @@ export async function lookupLyrics(
   const artistName = artist.trim();
   if (!trackName) return null;
 
-  const url = new URL("https://lrclib.net/api/search");
-  url.searchParams.set("track_name", trackName);
-  if (artistName) url.searchParams.set("artist_name", artistName);
+  const trackSimp = toSimplified(trackName);
+  const artistSimp = toSimplified(artistName);
 
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "VocalMasterAI/1.0 (vocal coaching lyric alignment)",
-      Accept: "application/json",
-    },
-    signal: AbortSignal.timeout(8000),
-    cache: "no-store",
-  });
-  if (!response.ok) return null;
-  const hits = (await response.json()) as LyricHit[];
-  if (!Array.isArray(hits)) return null;
+  const batches: LyricHit[][] = [];
+  batches.push(
+    await fetchLrclibSearch({ trackName, artistName: artistName || undefined })
+  );
+
+  if (trackSimp !== trackName || artistSimp !== artistName) {
+    batches.push(
+      await fetchLrclibSearch({
+        trackName: trackSimp,
+        artistName: artistSimp || undefined,
+      })
+    );
+  }
+
+  // Fuzzy q= helps when metadata is Live-tagged or script-mixed.
+  const qParts = [trackSimp || trackName, artistSimp || artistName].filter(
+    Boolean
+  );
+  if (qParts.length > 0) {
+    batches.push(await fetchLrclibSearch({ q: qParts.join(" ") }));
+  }
+
+  const hits = mergeHits(...batches);
   const hit = pickLyricHit(trackName, artistName, hits);
   if (!hit) return null;
   const synced = (hit.syncedLyrics ?? "").trim();

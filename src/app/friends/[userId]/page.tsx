@@ -146,7 +146,8 @@ export default async function FriendDashboardPage({
             <div className="space-y-3">
               {recent.map((r) => {
                 const audioShared = Boolean(
-                  r.share_audio && (r.storage_path || r.audio_url)
+                  (r.share_audio || r.share_audio_friends) &&
+                    (r.storage_path || r.audio_url)
                 );
                 return (
                   <Link key={r.id} href={`/result/${r.id}`}>

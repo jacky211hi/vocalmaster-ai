@@ -18,6 +18,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { useI18n } from "@/components/locale-provider";
 
 function extForFile(file: File): string {
   const name = file.name.toLowerCase();
@@ -73,6 +74,7 @@ function friendlyError(err: unknown): string {
 }
 
 export default function SingPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [songName, setSongName] = useState("");
   const [artist, setArtist] = useState("");
@@ -191,11 +193,9 @@ export default function SingPage() {
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
         <div className="mb-8">
           <h1 className="font-[family-name:var(--font-display)] text-4xl text-white">
-            準備練歌
+            {t("sing.title")}
           </h1>
-          <p className="mt-2 text-white/55">
-            跟譜練習練完即棄。自由錄音先會交俾 Gemini 出六維報告同排行榜。
-          </p>
+          <p className="mt-2 text-white/55">{t("sing.desc")}</p>
         </div>
 
         <div className="mb-4 inline-flex rounded-2xl border border-white/10 bg-black/30 p-1">
@@ -210,7 +210,7 @@ export default function SingPage() {
                 : "text-white/60"
             )}
           >
-            跟譜練習
+            {t("sing.mode.exercise")}
           </button>
           <button
             type="button"
@@ -221,17 +221,19 @@ export default function SingPage() {
               mode === "free" ? "bg-amber-400 text-slate-950" : "text-white/60"
             )}
           >
-            自由錄音
+            {t("sing.mode.free")}
           </button>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>{mode === "exercise" ? "跟譜計分" : "提交錄音"}</CardTitle>
+            <CardTitle>
+              {mode === "exercise" ? t("sing.card.exercise") : t("sing.card.free")}
+            </CardTitle>
             <CardDescription>
               {mode === "exercise"
-                ? "戴上耳機跟住提示音唱。練完即棄，唔會計入報告或排行榜。"
-                : "建議錄 15–60 秒副歌或高音段。整首歌可以，但分析會較慢。"}
+                ? t("sing.desc.exercise")
+                : t("sing.desc.free")}
             </CardDescription>
           </CardHeader>
           <CardContent>

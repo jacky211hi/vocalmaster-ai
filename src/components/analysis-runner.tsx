@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useI18n } from "@/components/locale-provider";
 
 export function AnalysisRunner({ recordingId }: { recordingId: string }) {
   const router = useRouter();
+  const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(true);
   const startedRef = useRef(false);
@@ -18,7 +20,7 @@ export function AnalysisRunner({ recordingId }: { recordingId: string }) {
       if (sessionStorage.getItem(lockKey) === "1") {
         // Already auto-started this session — wait for user to tap retry
         setRunning(false);
-        setError("分析已觸發過。如果未完成，請撳下面重試（注意免費額度有限）。");
+        setError(t("analysis.retryHint"));
         return;
       }
       sessionStorage.setItem(lockKey, "1");
@@ -67,7 +69,7 @@ export function AnalysisRunner({ recordingId }: { recordingId: string }) {
             <div>
               <p className="font-semibold text-white">AI 教練分析中…</p>
               <p className="mt-1 text-sm text-white/55">
-                通常 20–60 秒。請唔好關閉頁面。
+                {t("analysis.keepOpen")}
               </p>
             </div>
           </>

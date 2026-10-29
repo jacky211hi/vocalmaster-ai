@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { Lightbulb, ArrowLeft, Mic2, Headphones } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Navbar } from "@/components/navbar";
+import { UserAvatar } from "@/components/user-avatar";
 import { ScoreBars } from "@/components/score-bars";
 import { ScoreRadar } from "@/components/score-radar";
 import { DeleteRecordingButton } from "@/components/delete-recording-button";
@@ -19,16 +20,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { areAcceptedFriends } from "@/lib/friends";
 import { isAnalyzingFeedback } from "@/lib/analysis-status";
+import { getRequestLocale } from "@/lib/i18n/server";
+import { translate } from "@/lib/i18n/messages";
 import { parsePitchReport } from "@/lib/pitch/report";
 import { PitchReportPanel } from "@/components/pitch-report-panel";
 import type { Recording } from "@/lib/types";
 
 export default async function ResultPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
   const { id } = await params;
+  const { from } = await searchParams;
+  const fromLeaderboard = from === "leaderboard";
+  const locale = await getRequestLocale();
+  const t = (
+    key: Parameters<typeof translate>[1],
+    vars?: Record<string, string | number>
+  ) => translate(locale, key, vars);
   const supabase = await createClient();
   const {
     data: { user },
@@ -54,30 +66,35 @@ export default async function ResultPage({
     !isOwner &&
     (await areAcceptedFriends(supabase, user.id, recording.user_id));
 
-  let friendUsername: string | null = null;
-  if (viewingFriend) {
-    const { data: ownerProfile } = await supabase
-      .from("profiles")
-      .select("username")
-      .eq("id", recording.user_id)
-      .maybeSingle();
-    friendUsername = ownerProfile?.username ?? null;
-  }
+  const { data: singerProfile } = await supabase
+    .from("profiles")
+    .select("username, avatar_url")
+    .eq("id", recording.user_id)
+    .maybeSingle();
+  const singerUsername = singerProfile?.username ?? t("result.anonymous");
 
-  const backHref = viewingFriend
-    ? `/friends/${recording.user_id}`
-    : "/dashboard";
-  const backLabel = viewingFriend
-    ? `${friendUsername ?? "朋友"} 練習室`
-    : "練習室";
+  const backHref = fromLeaderboard
+    ? "/leaderboard"
+    : viewingFriend
+      ? `/friends/${recording.user_id}`
+      : "/dashboard";
+  const backLabel = fromLeaderboard
+    ? t("result.back.leaderboard")
+    : viewingFriend
+      ? t("result.back.friendPractice", { name: singerUsername })
+      : t("result.back.practice");
   const analyzing = isAnalyzingFeedback(recording.ai_feedback_md);
   const pitchReport = parsePitchReport(recording.pitch_report);
   const hasStoredAudio = Boolean(
     recording.storage_path || recording.audio_url
   );
-  const shareAudio = Boolean(recording.share_audio);
+  const shareAudioGlobal = Boolean(recording.share_audio);
+  const shareAudioFriends = Boolean(recording.share_audio_friends);
   const canListen =
-    hasStoredAudio && (isOwner || shareAudio);
+    hasStoredAudio &&
+    (isOwner ||
+      shareAudioGlobal ||
+      (shareAudioFriends && viewingFriend));
 
   let playUrl = "";
   if (canListen) {
@@ -146,7 +163,7 @@ export default async function ResultPage({
               <Link href="/sing">
                 <Button variant="secondary" size="sm">
                   <Mic2 className="h-4 w-4" />
-                  再唱一首
+                  {t("result.singAgain")}
                 </Button>
               </Link>
               <DeleteRecordingButton
@@ -166,12 +183,23 @@ export default async function ResultPage({
               {recording.song_name}
             </h1>
             <p className="mt-1 text-white/55">
-              {recording.artist || "未知歌手"}
+              {recording.artist || t("common.unknownArtist")}
             </p>
+            <div className="mt-3 flex items-center gap-2.5">
+              <UserAvatar
+                avatarUrl={singerProfile?.avatar_url}
+                username={singerUsername}
+                size={28}
+              />
+              <p className="text-sm text-white/70">
+                <span className="text-white/40">{t("result.singer")} </span>
+                {isOwner ? t("result.you") : singerUsername}
+              </p>
+            </div>
           </div>
           <div className="rounded-3xl border border-amber-400/30 bg-amber-400/10 px-6 py-4 text-center">
             <p className="text-xs uppercase tracking-wider text-amber-200/70">
-              Total Score
+              {t("result.total")}
             </p>
             <p className="font-[family-name:var(--font-display)] text-5xl text-amber-300">
               {analyzing ? "…" : recording.total_score}
@@ -186,7 +214,7 @@ export default async function ResultPage({
         ) : analyzing ? (
           <Card className="mb-6">
             <CardContent className="py-8 text-center text-white/55">
-              AI 分析進行中，請稍後刷新頁面。
+              {t("result.analyzing")}
             </CardContent>
           </Card>
         ) : (
@@ -198,19 +226,17 @@ export default async function ResultPage({
                 ) : hasStoredAudio && !isOwner ? (
                   <p className="flex items-center gap-2 text-sm text-white/50">
                     <Headphones className="h-4 w-4 shrink-0" />
-                    歌手未開放分享此錄音音樂檔；分數同 AI 報告仍可睇。
+                    {t("result.noShare")}
                   </p>
                 ) : (
-                  <p className="text-sm text-white/50">
-                    此錄音未進入個人 Top 10，音檔未保存；分數與 AI
-                    分析報告仍然保留。
-                  </p>
+                  <p className="text-sm text-white/50">{t("result.noAudioKept")}</p>
                 )}
 
                 {isOwner && (
                   <ShareAudioToggle
                     recordingId={recording.id}
-                    initialShared={shareAudio}
+                    initialSharedGlobal={shareAudioGlobal}
+                    initialSharedFriends={shareAudioFriends}
                     hasAudio={hasStoredAudio}
                   />
                 )}
@@ -220,7 +246,7 @@ export default async function ResultPage({
             <div className="mb-6 grid gap-6 lg:grid-cols-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>六維雷達圖</CardTitle>
+                  <CardTitle>{t("result.radar")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ScoreRadar scores={scores} />
@@ -228,7 +254,7 @@ export default async function ResultPage({
               </Card>
               <Card>
                 <CardHeader>
-                  <CardTitle>分項評分</CardTitle>
+                  <CardTitle>{t("result.scores")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ScoreBars scores={scores} />
@@ -238,7 +264,7 @@ export default async function ResultPage({
 
             <Card className="mb-6">
               <CardHeader>
-                <CardTitle>AI 診斷報告</CardTitle>
+                <CardTitle>{t("result.report")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="prose-vocal">
@@ -253,7 +279,7 @@ export default async function ResultPage({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-amber-200">
                   <Lightbulb className="h-5 w-5" />
-                  改善建議
+                  {t("result.advice")}
                 </CardTitle>
               </CardHeader>
               <CardContent>

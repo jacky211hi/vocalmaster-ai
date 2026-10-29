@@ -23,6 +23,18 @@ const hits = [
     plainLyrics: "如果那兩個字沒有顫抖",
     syncedLyrics: null,
   },
+  {
+    trackName: "像风一样 (Live)",
+    artistName: "单依纯",
+    plainLyrics: "像風一樣 你靠近雲都下降",
+    syncedLyrics: "[00:46.89] 像風一樣 你靠近雲都下降",
+  },
+  {
+    trackName: "像風一樣",
+    artistName: "薛之謙",
+    plainLyrics: "像風一樣 你靠近雲都下降",
+    syncedLyrics: null,
+  },
 ];
 
 const exact = pickLyricHit("富士山下", "陳奕迅", hits);
@@ -36,5 +48,18 @@ assert(wrongArtist == null, "reject different artist");
 
 const missing = pickLyricHit("沒有這首歌", "陳奕迅", hits);
 assert(missing == null, "missing song");
+
+const tradCover = pickLyricHit("像風一樣", "單依純", hits);
+assert(
+  tradCover?.artistName === "单依纯",
+  "trad input matches simplified cover metadata"
+);
+assert(
+  Boolean(tradCover?.syncedLyrics?.includes("像風一樣")),
+  "cover lyrics body kept"
+);
+
+const simpSame = pickLyricHit("像风一样", "单依纯", hits);
+assert(simpSame?.artistName === "单依纯", "simplified input still matches");
 
 console.log("lyrics pick ok");

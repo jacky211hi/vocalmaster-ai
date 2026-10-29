@@ -1,10 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
+import type { Locale } from "@/lib/i18n/config";
+import { geminiLanguageInstruction } from "@/lib/i18n/gemini-locale";
 import { lyricsPrompt, type LyricMatch } from "@/lib/lyrics";
 import { coachPitchBrief } from "@/lib/pitch/report";
 import type { PitchReport } from "@/lib/pitch/score";
 import type { VocalAnalysisResult } from "@/lib/types";
 
-const SYSTEM_INSTRUCTION = `You are a strict but encouraging professional vocal coach for "VocalMaster AI (AI 聲樂教練)".
+function buildSystemInstruction(locale: Locale): string {
+  return `You are a strict but encouraging professional vocal coach for "VocalMaster AI (AI 聲樂教練)".
 
 Evaluate the singing on SIX dimensions (0–100 ints):
 - timbre_score：音色 Timbre（聲線質感、個性）
@@ -14,31 +17,33 @@ Evaluate the singing on SIX dimensions (0–100 ints):
 - rhythm_score：節奏 Rhythm（拍子、進出拍、groove）
 - dynamics_score：力度 Dynamics（強弱起伏、對比、情感張力）
 
-Write BOTH fields in Traditional Chinese Markdown.
+${geminiLanguageInstruction(locale)}
 
-## detailed_feedback（AI 診斷報告）— 要仔細、有時間軸
-Structure with these sections (use ## headings):
-1. **整體印象**：2–4 句總結整體表現。
-2. **時間段分析**：把整段錄音分成多個時間段（主歌、副歌、高音段、結尾；時間用錄音本身嘅 mm:ss–mm:ss）。如果提供咗 OFFICIAL_LYRICS，每個時段標題必須抄該歌詞入面嘅正確一句，禁止靠聽寫廣東話歌詞，禁止改字。對唔上就寫「未能對上歌詞」，唔好估詞。冇提供歌詞時，標題只用段落名，唔好加引號歌詞。每個時段寫：
-   - 時間範圍（估計即可，例如 \`0:00–0:25\`）
-   - 做得好的地方（具體：音準、氣息、音色、發聲、節奏、力度）
-   - 需改善的地方（具體指出問題，例如擠壓、走音、氣短、換聲斷裂、拖拍、力度平坦）
-3. **六維細評**：分別簡述音色／發聲／音準／呼吸／節奏／力度嘅觀察，指出最強同最弱。
-4. **亮點與風險**：1–2 個最突出優點；1–2 個最需要優先處理嘅問題。
+## detailed_feedback（AI diagnostic report）— thorough, timed
+Structure with these sections (use ## headings; translate section titles to the LANGUAGE above):
+1. **整體印象** / Overall impression: 2–4 sentences.
+2. **時間段分析** / Timed sections: split the clip (verse / chorus / high notes / ending; times on the user's recording mm:ss–mm:ss). If OFFICIAL_LYRICS are provided, each section title must copy one exact line from those lyrics — never speech-recognize lyrics from audio, never invent words. If unmatched, write 「未能對上歌詞」 (or English "Could not align lyrics"). If no lyrics, use section names only without quoted lyric lines. Each section:
+   - time range (e.g. \`0:00–0:25\`)
+   - strengths (pitch, breath, timbre, phonation, rhythm, dynamics)
+   - improvements (squeeze, pitch drift, short breath, register break, dragging, flat dynamics)
+3. **六維細評** / Six dimensions: brief note per dimension; strongest and weakest.
+4. **亮點與風險** / Highlights & risks: 1–2 strengths; 1–2 priority issues.
 
-Be specific and concrete — quote approximate moments, phrase shapes, vowels, register shifts, beat placement, or volume arcs when possible. Aim for a thorough coach report (約 600–1200 字)，唔好空泛。
+Be specific — quote moments, vowels, register shifts, beat placement, or volume arcs. Aim for a thorough coach report (~600–1200 words / equivalent Chinese length). Avoid vague praise.
 
-## actionable_advice（改善建議）— 可執行練習
-頁面已經有「改善建議」標題，正文不要再寫「改善建議」做標題。
-直接用三級標題列出 2–4 個練習，格式固定：
-### 1. 練習名
-- **點做**：
-- **練幾耐**：
-- **對應問題**：
-練習可以係唇震音、歎氣式 Ma、半聲滑音、節拍器、強弱對比等。保持精簡可執行。
+## actionable_advice（practice tips）— actionable, personalized, low repetition
+The page already shows the advice card title — do not repeat that title in the body.
+If USER_COACH_HISTORY is present: open with 1–2 sentences on which dimensions improved or remain stuck, then list drills.
+Use level-3 headings for 2–4 drills:
+### 1. Drill name
+- **點做** / How:
+- **練幾耐** / How long:
+- **對應問題** / Targets:
+Pick varied drills by weakness (breath support, SOVT straw, sirens, humming, twang, pitch matching, metronome phrasing, messa di voce, etc.). Do not reuse recent exercise titles unless the same weakness did not improve — then escalate. Keep concise and executable.
 
 Return ONLY JSON:
 {"total_score":int,"timbre_score":int,"phonation_score":int,"pitch_score":int,"breath_score":int,"rhythm_score":int,"dynamics_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown"}`;
+}
 
 /**
  * Ordered fallback pool. Free-tier quotas are usually per-model,
@@ -156,24 +161,32 @@ export async function analyzeVocalAudio(params: {
   artist: string;
   pitchReport?: PitchReport | null;
   lyrics?: LyricMatch | null;
+  coachHistory?: string | null;
+  locale?: Locale;
 }): Promise<VocalAnalysisResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured");
   }
 
+  const locale = params.locale ?? "hk";
   const ai = new GoogleGenAI({ apiKey });
   const measured = params.pitchReport
     ? `\n${coachPitchBrief(params.pitchReport)}\n`
     : "";
   const lyrics = params.lyrics ? `\n${lyricsPrompt(params.lyrics)}\n` : "";
+  const history = params.coachHistory
+    ? `\n${params.coachHistory}\n`
+    : "";
   const userPrompt = `Song: ${params.songName}
 Artist: ${params.artist || "Unknown"}
-${lyrics}${measured}
+${lyrics}${measured}${history}
 Listen carefully to the full clip. Section times are on the user's recording, starting at 0:00.
 In detailed_feedback, mark which time ranges went well vs poorly.
-If OFFICIAL_LYRICS are present, quote those lines exactly in the section titles. Do not transcribe Cantonese lyrics from the audio.
-Then give actionable_advice exercises tied to those weak moments.
+If OFFICIAL_LYRICS are present, quote those lines exactly in the section titles. Do not transcribe lyrics from the audio.
+If USER_COACH_HISTORY is present: briefly note progress or stuck weaknesses vs past sessions; for actionable_advice prioritize recurring weak dimensions, avoid repeating prior exercise titles when possible, and escalate if the same issue persists.
+Follow the LANGUAGE rule in the system instruction for all written fields.
+Then give actionable_advice exercises tied to this clip's weak moments and this user's history.
 Return the JSON evaluation.`;
 
   const contents = [
@@ -192,7 +205,7 @@ Return the JSON evaluation.`;
   ];
 
   const config = {
-    systemInstruction: SYSTEM_INSTRUCTION,
+    systemInstruction: buildSystemInstruction(locale),
     responseMimeType: "application/json",
     temperature: 0.3,
   };

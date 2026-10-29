@@ -10,6 +10,8 @@ import {
   pruneUserRecordingsToTopN,
   scoreQualifiesForTopN,
 } from "@/lib/prune-recordings";
+import { coachHistoryPrompt } from "@/lib/coach-history";
+import { getRequestLocale } from "@/lib/i18n/server";
 import { lookupLyrics } from "@/lib/lyrics";
 import { measuredMarkdown, parsePitchReport } from "@/lib/pitch/report";
 
@@ -110,6 +112,28 @@ export async function POST(request: Request) {
         err instanceof Error ? err.message : err
       );
     }
+
+    const { data: historyRows } = await supabase
+      .from("recordings")
+      .select(
+        "song_name, artist, total_score, timbre_score, phonation_score, pitch_score, breath_score, rhythm_score, dynamics_score, ai_feedback_md, actionable_advice, created_at"
+      )
+      .eq("user_id", user.id)
+      .neq("id", id)
+      .order("created_at", { ascending: false })
+      .limit(12);
+
+    let coachHistory: string | null = null;
+    try {
+      coachHistory = coachHistoryPrompt(historyRows ?? []);
+    } catch (err) {
+      console.warn(
+        "[coach-history] build failed:",
+        err instanceof Error ? err.message : err
+      );
+    }
+
+    const locale = await getRequestLocale();
     const analysis = await analyzeVocalAudio({
       audioBase64: buffer.toString("base64"),
       mimeType,
@@ -117,6 +141,8 @@ export async function POST(request: Request) {
       artist: recording.artist ?? "",
       pitchReport,
       lyrics,
+      coachHistory,
+      locale,
     });
     const pitchScore = pitchReport
       ? pitchReport.pitchScore
@@ -136,8 +162,16 @@ export async function POST(request: Request) {
         )
       : analysis.total_score;
     const lyricNote = lyrics
-      ? `歌詞對照：${lyrics.artist}〈${lyrics.track}〉\n\n`
-      : "未搵到正式歌詞，時間段分析冇引用聽寫歌詞。\n\n";
+      ? locale === "en"
+        ? `Lyrics match: ${lyrics.artist} 〈${lyrics.track}〉\n\n`
+        : locale === "tw"
+          ? `歌詞對照：${lyrics.artist}〈${lyrics.track}〉\n\n`
+          : `歌詞對照：${lyrics.artist}〈${lyrics.track}〉\n\n`
+      : locale === "en"
+        ? "Official lyrics not found; timed sections did not quote transcribed lyrics.\n\n"
+        : locale === "tw"
+          ? "未找到正式歌詞，時間段分析未引用聽寫歌詞。\n\n"
+          : "未搵到正式歌詞，時間段分析冇引用聽寫歌詞。\n\n";
     const feedback = `${lyricNote}${
       pitchReport ? `${measuredMarkdown(pitchReport)}\n` : ""
     }${analysis.detailed_feedback}`;
@@ -162,11 +196,13 @@ export async function POST(request: Request) {
     let storagePath = recording.storage_path as string | null;
 
     let shareAudio = Boolean(recording.share_audio);
+    let shareAudioFriends = Boolean(recording.share_audio_friends);
     if (!keepAudio && storagePath) {
       await supabase.storage.from("recordings").remove([storagePath]);
       storagePath = null;
       audioUrl = "";
       shareAudio = false;
+      shareAudioFriends = false;
     } else if (keepAudio && storagePath && !audioUrl) {
       const { data: signed } = await supabase.storage
         .from("recordings")
@@ -189,6 +225,7 @@ export async function POST(request: Request) {
         audio_url: audioUrl,
         storage_path: storagePath,
         share_audio: shareAudio,
+        share_audio_friends: shareAudioFriends,
       })
       .eq("id", id)
       .eq("user_id", user.id);

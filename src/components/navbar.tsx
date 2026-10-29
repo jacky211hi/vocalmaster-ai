@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Mic2, LogOut, Trophy, LayoutDashboard, Music2, Users } from "lucide-react";
+import {
+  Mic2,
+  LogOut,
+  Trophy,
+  LayoutDashboard,
+  Music2,
+  Users,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
+import { LocaleSwitcher } from "@/components/locale-switcher";
+import { useI18n } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
-
-const links = [
-  { href: "/dashboard", label: "練習室", icon: LayoutDashboard },
-  { href: "/sing", label: "唱歌", icon: Music2 },
-  { href: "/friends", label: "朋友", icon: Users },
-  { href: "/leaderboard", label: "排行榜", icon: Trophy },
-];
 
 export function Navbar({
   username,
@@ -24,6 +26,14 @@ export function Navbar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useI18n();
+
+  const links = [
+    { href: "/dashboard", label: t("nav.practice"), icon: LayoutDashboard },
+    { href: "/sing", label: t("nav.sing"), icon: Music2 },
+    { href: "/friends", label: t("nav.friends"), icon: Users },
+    { href: "/leaderboard", label: t("nav.leaderboard"), icon: Trophy },
+  ];
 
   async function handleLogout() {
     const supabase = createClient();
@@ -44,7 +54,7 @@ export function Navbar({
               VocalMaster AI
             </p>
             <p className="text-[10px] text-amber-200/70 sm:text-[11px]">
-              AI 聲樂教練
+              {t("brand.tagline")}
             </p>
           </div>
         </Link>
@@ -69,6 +79,7 @@ export function Navbar({
         </nav>
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <LocaleSwitcher />
           {username && (
             <Link
               href="/profile"
@@ -78,7 +89,7 @@ export function Navbar({
                   ? "bg-white/10 text-white"
                   : "text-white/60 hover:bg-white/5 hover:text-white"
               )}
-              title="個人檔案"
+              title={t("nav.profile")}
             >
               <UserAvatar
                 avatarUrl={avatarUrl}
@@ -93,8 +104,8 @@ export function Navbar({
             size="icon"
             className="h-10 w-10"
             onClick={handleLogout}
-            aria-label="登出"
-            title="登出"
+            aria-label={t("nav.logout")}
+            title={t("nav.logout")}
           >
             <LogOut className="h-4 w-4" />
           </Button>

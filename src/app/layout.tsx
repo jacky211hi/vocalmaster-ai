@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Manrope, Fraunces } from "next/font/google";
+import { LocaleProvider } from "@/components/locale-provider";
+import { getRequestLocale } from "@/lib/i18n/server";
+import { LOCALE_HTML_LANG } from "@/lib/i18n/config";
 import "./globals.css";
 
 const body = Manrope({
@@ -25,14 +28,20 @@ export const viewport: Viewport = {
   themeColor: "#0b1220",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = await getRequestLocale();
   return (
-    <html lang="zh-Hant" className={`${body.variable} ${display.variable} h-full`}>
-      <body className="min-h-full antialiased">{children}</body>
+    <html
+      lang={LOCALE_HTML_LANG[locale]}
+      className={`${body.variable} ${display.variable} h-full`}
+    >
+      <body className="min-h-full antialiased">
+        <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>
+      </body>
     </html>
   );
 }

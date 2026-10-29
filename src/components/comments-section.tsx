@@ -7,6 +7,7 @@ import { MessageCircle, Send, Trash2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserAvatar } from "@/components/user-avatar";
+import { useI18n } from "@/components/locale-provider";
 
 export type CommentItem = {
   id: string;
@@ -30,6 +31,7 @@ export function CommentsSection({
   isRecordingOwner,
   initialComments,
 }: Props) {
+  const { t } = useI18n();
   const router = useRouter();
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
@@ -61,7 +63,7 @@ export function CommentsSection({
   }
 
   async function onDelete(commentId: string) {
-    if (!window.confirm("確定刪除呢條留言？")) return;
+    if (!window.confirm(t("comments.deleteConfirm"))) return;
     setDeletingId(commentId);
     try {
       const res = await fetch(`/api/comments/${commentId}`, { method: "DELETE" });
@@ -80,7 +82,7 @@ export function CommentsSection({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <MessageCircle className="h-5 w-5 text-amber-300" />
-          留言 ({initialComments.length})
+          {t("comments.title")} ({initialComments.length})
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -88,7 +90,7 @@ export function CommentsSection({
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="寫下你嘅感想或鼓勵…"
+            placeholder={t("comments.placeholder")}
             maxLength={1000}
             rows={3}
             disabled={loading}
@@ -102,7 +104,7 @@ export function CommentsSection({
               ) : (
                 <Send className="h-4 w-4" />
               )}
-              發送
+              {t("comments.send")}
             </Button>
           </div>
           {error && (
@@ -114,7 +116,7 @@ export function CommentsSection({
 
         {initialComments.length === 0 ? (
           <p className="py-4 text-center text-sm text-white/45">
-            尚未有留言，做第一個留言嘅人啦。
+            {t("comments.empty")}
           </p>
         ) : (
           <ul className="space-y-3">

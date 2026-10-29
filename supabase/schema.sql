@@ -19,6 +19,7 @@ create table if not exists public.recordings (
   audio_url text not null default '',
   storage_path text,
   share_audio boolean not null default false,
+  share_audio_friends boolean not null default false,
   total_score integer not null default 0 check (total_score between 0 and 100),
   timbre_score integer not null default 0 check (timbre_score between 0 and 100),
   phonation_score integer not null default 0 check (phonation_score between 0 and 100),
@@ -220,7 +221,21 @@ create policy "Authenticated can read shared audio"
       select 1
       from public.recordings r
       where r.storage_path = name
-        and r.share_audio = true
+        and (
+          r.share_audio = true
+          or (
+            r.share_audio_friends = true
+            and exists (
+              select 1
+              from public.friends f
+              where f.status = 'accepted'
+                and (
+                  (f.user_id = auth.uid() and f.friend_id = r.user_id)
+                  or (f.friend_id = auth.uid() and f.user_id = r.user_id)
+                )
+            )
+          )
+        )
     )
   );
 
