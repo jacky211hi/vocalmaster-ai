@@ -12,7 +12,7 @@ import {
 } from "@/lib/prune-recordings";
 import { coachHistoryPrompt } from "@/lib/coach-history";
 import { getRequestLocale } from "@/lib/i18n/server";
-import { lookupLyrics } from "@/lib/lyrics";
+import { lookupLyrics, looksTraditional } from "@/lib/lyrics";
 import { measuredMarkdown, parsePitchReport } from "@/lib/pitch/report";
 import {
   mergeVocalRange,
@@ -104,11 +104,18 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await fileData.arrayBuffer());
     const mimeType = normalizeMime(mimeHint, recording.storage_path);
     const pitchReport = parsePitchReport(recording.pitch_report);
+    const locale = await getRequestLocale();
+    const preferTraditionalLyrics =
+      locale !== "en" ||
+      looksTraditional(
+        `${recording.song_name ?? ""}${recording.artist ?? ""}`
+      );
     let lyrics = null;
     try {
       lyrics = await lookupLyrics(
         recording.song_name,
-        recording.artist ?? ""
+        recording.artist ?? "",
+        { preferTraditional: preferTraditionalLyrics }
       );
     } catch (err) {
       console.warn(
@@ -136,8 +143,27 @@ export async function POST(request: Request) {
 
     let coachHistory: string | null = null;
     try {
-      coachHistory = coachHistoryPrompt(historyRows ?? [], {
-        rollingSummary: profileCoach?.coach_summary ?? null,
+      // Orphan profile.coach_summary (e.g. user deleted all recordings) must
+      // not invent "歷史紀錄" — only pass rolling memory when prior rows exist.
+      const prior = historyRows ?? [];
+      const rolling =
+        prior.length > 0 ? profileCoach?.coach_summary ?? null : null;
+      if (prior.length === 0 && profileCoach?.coach_summary) {
+        void supabase
+          .from("profiles")
+          .update({ coach_summary: null })
+          .eq("id", user.id)
+          .then(({ error }) => {
+            if (error) {
+              console.warn(
+                "[coach-summary] clear orphan failed:",
+                error.message
+              );
+            }
+          });
+      }
+      coachHistory = coachHistoryPrompt(prior, {
+        rollingSummary: rolling,
         recentLimit: 2,
       });
     } catch (err) {
@@ -148,7 +174,6 @@ export async function POST(request: Request) {
     }
 
     const measuredRange = parseVocalRange(recording.vocal_range);
-    const locale = await getRequestLocale();
     const analysis = await analyzeVocalAudio({
       audioBase64: buffer.toString("base64"),
       mimeType,
@@ -181,18 +206,7 @@ export async function POST(request: Request) {
             6
         )
       : analysis.total_score;
-    const lyricNote = lyrics
-      ? locale === "en"
-        ? `Lyrics match: ${lyrics.artist} 〈${lyrics.track}〉\n\n`
-        : locale === "tw"
-          ? `歌詞對照：${lyrics.artist}〈${lyrics.track}〉\n\n`
-          : `歌詞對照：${lyrics.artist}〈${lyrics.track}〉\n\n`
-      : locale === "en"
-        ? "Official lyrics not found; timed sections did not quote transcribed lyrics.\n\n"
-        : locale === "tw"
-          ? "未找到正式歌詞，時間段分析未引用聽寫歌詞。\n\n"
-          : "未搵到正式歌詞，時間段分析冇引用聽寫歌詞。\n\n";
-    const feedback = `${lyricNote}${
+    const feedback = `${
       pitchReport ? `${measuredMarkdown(pitchReport)}\n` : ""
     }${analysis.detailed_feedback}`;
 

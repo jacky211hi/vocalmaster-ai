@@ -1,4 +1,5 @@
-import { Converter } from "opencc-js/t2cn";
+import { Converter as ToSimplified } from "opencc-js/t2cn";
+import { Converter as ToTraditional } from "opencc-js/cn2t";
 
 export type LyricMatch = {
   track: string;
@@ -17,7 +18,9 @@ type LyricHit = {
 };
 
 /** Canonicalize Traditional → Simplified so LRCLIB metadata matches HK/TW input. */
-const toSimplified = Converter({ from: "t", to: "cn" });
+const toSimplified = ToSimplified({ from: "t", to: "cn" });
+/** Simplified → Traditional for display / Gemini quoting when user typed 繁體. */
+const toTraditional = ToTraditional({ from: "cn", to: "t" });
 
 function norm(value: string): string {
   return toSimplified(value)
@@ -26,19 +29,37 @@ function norm(value: string): string {
     .replace(/[\s'’"“”·・,，.。!！?？\-—_]/g, "");
 }
 
+/** True when converting to simplified changes the string (has Traditional forms). */
+export function looksTraditional(value: string): boolean {
+  const s = value.trim();
+  if (!s) return false;
+  return toSimplified(s) !== s;
+}
+
 function hitKey(hit: LyricHit): string {
   if (hit.id != null) return `id:${hit.id}`;
   return `t:${hit.trackName ?? ""}|a:${hit.artistName ?? ""}|al:${hit.albumName ?? ""}`;
 }
 
+function hitLooksTraditional(hit: LyricHit): boolean {
+  const sample = [
+    hit.trackName ?? "",
+    hit.artistName ?? "",
+    (hit.syncedLyrics || hit.plainLyrics || "").slice(0, 240),
+  ].join("");
+  return looksTraditional(sample);
+}
+
 export function pickLyricHit(
   song: string,
   artist: string,
-  hits: LyricHit[]
+  hits: LyricHit[],
+  opts?: { preferTraditional?: boolean }
 ): LyricHit | null {
   const songN = norm(song);
   const artistN = norm(artist);
   if (!songN) return null;
+  const preferTraditional = Boolean(opts?.preferTraditional);
 
   let best: { hit: LyricHit; score: number } | null = null;
   for (const hit of hits) {
@@ -55,6 +76,9 @@ export function pickLyricHit(
     const body = (hit.syncedLyrics || hit.plainLyrics || "").trim();
     if (!body) score -= 5;
     if (hit.syncedLyrics) score += 1;
+    if (preferTraditional) {
+      score += hitLooksTraditional(hit) ? 2 : 0;
+    }
     if (!best || score > best.score) best = { hit, score };
   }
   if (!best || best.score < 6) return null;
@@ -107,15 +131,20 @@ function mergeHits(...batches: LyricHit[][]): LyricHit[] {
 
 export async function lookupLyrics(
   song: string,
-  artist: string
+  artist: string,
+  opts?: { preferTraditional?: boolean }
 ): Promise<LyricMatch | null> {
   const trackName = song.trim();
   const artistName = artist.trim();
   if (!trackName) return null;
 
+  const preferTraditional =
+    opts?.preferTraditional ??
+    looksTraditional(`${trackName}${artistName}`);
   const trackSimp = toSimplified(trackName);
   const artistSimp = toSimplified(artistName);
 
+  // Prefer original script query first (usually Traditional for HK/TW users).
   const batches: LyricHit[][] = [];
   batches.push(
     await fetchLrclibSearch({ trackName, artistName: artistName || undefined })
@@ -131,23 +160,43 @@ export async function lookupLyrics(
   }
 
   // Fuzzy q= helps when metadata is Live-tagged or script-mixed.
-  const qParts = [trackSimp || trackName, artistSimp || artistName].filter(
-    Boolean
-  );
-  if (qParts.length > 0) {
-    batches.push(await fetchLrclibSearch({ q: qParts.join(" ") }));
+  // Prefer traditional query string first when user typed 繁體.
+  const qTrad = [trackName, artistName].filter(Boolean).join(" ");
+  const qSimp = [trackSimp || trackName, artistSimp || artistName]
+    .filter(Boolean)
+    .join(" ");
+  if (preferTraditional && qTrad) {
+    batches.push(await fetchLrclibSearch({ q: qTrad }));
+    if (qSimp && qSimp !== qTrad) {
+      batches.push(await fetchLrclibSearch({ q: qSimp }));
+    }
+  } else if (qSimp) {
+    batches.push(await fetchLrclibSearch({ q: qSimp }));
   }
 
   const hits = mergeHits(...batches);
-  const hit = pickLyricHit(trackName, artistName, hits);
+  const hit = pickLyricHit(trackName, artistName, hits, {
+    preferTraditional,
+  });
   if (!hit) return null;
   const synced = (hit.syncedLyrics ?? "").trim();
   const plain = (hit.plainLyrics ?? "").trim();
-  const text = (synced || plain).slice(0, 6000);
+  let text = (synced || plain).slice(0, 6000);
   if (!text) return null;
+
+  let track = hit.trackName?.trim() || trackName;
+  let artistOut = hit.artistName?.trim() || artistName;
+
+  // User typed Traditional → keep / convert lyrics to Traditional for Gemini quotes.
+  if (preferTraditional) {
+    text = toTraditional(text);
+    track = toTraditional(track);
+    artistOut = toTraditional(artistOut);
+  }
+
   return {
-    track: hit.trackName?.trim() || trackName,
-    artist: hit.artistName?.trim() || artistName,
+    track,
+    artist: artistOut,
     text,
     synced: Boolean(synced),
   };
@@ -155,14 +204,15 @@ export async function lookupLyrics(
 
 export function lyricsPrompt(match: LyricMatch): string {
   return [
-    "OFFICIAL_LYRICS (correct published lyrics; Cantonese audio transcription is NOT reliable):",
+    "OFFICIAL_LYRICS (authoritative published lyrics — MUST use these; ASR from audio is unreliable):",
     `Track: ${match.track}`,
     `Artist: ${match.artist}`,
     match.synced
       ? "Lines may include [mm:ss] from the original studio recording. Those times are NOT the user's clip clock. The user's clip starts at 0:00."
       : "No studio timestamps. Align lines by listening, using the user's clip clock starting at 0:00.",
-    "In 時間段分析, name each sung section with an exact line copied from the text below.",
-    "Do not invent, paraphrase, or speech-recognize lyric words. If you cannot tell which line is being sung, write 未能對上歌詞 and do not quote made-up words.",
+    "In timed-section analysis, each section title MUST be an exact copy from the text below (character-accurate).",
+    "FORBIDDEN: inventing homophones, paraphrases, or speech-recognized fake lyrics, then coaching those fake words.",
+    "If you cannot match a line confidently, write the unmatched placeholder — do not invent words.",
     match.text,
   ].join("\n");
 }

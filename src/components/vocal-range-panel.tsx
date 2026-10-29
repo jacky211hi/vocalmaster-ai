@@ -80,6 +80,9 @@ export function VocalRangePanel({ report }: { report: VocalRangeReport }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <p className="text-xs text-white/40">
+          音域取自信賴度高嘅人聲基頻；原曲 Key 以歌曲／歌手公開調性為主（唔係結他 Capo 指法調）。
+        </p>
         <NotePair
           low={report.lowest_note}
           high={report.highest_note}
@@ -88,7 +91,7 @@ export function VocalRangePanel({ report }: { report: VocalRangeReport }) {
         <RangeMeter lowMidi={report.lowest_midi} highMidi={report.highest_midi} />
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <p className="text-xs text-white/40">原曲 Key（估計）</p>
+            <p className="text-xs text-white/40">原曲 Key（公開／估計）</p>
             <p className="mt-1 text-lg font-semibold text-white">
               {report.song_key ?? "—"}
             </p>

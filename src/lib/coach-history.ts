@@ -84,24 +84,25 @@ export function coachHistoryPrompt(
   ].slice(0, 8);
 
   return [
-    "USER_COACH_HISTORY (compact — prefer ROLLING_COACH_SUMMARY; do NOT ignore):",
+    "USER_COACH_HISTORY (ADVICE ONLY — never for scores or timed diagnosis):",
+    "CRITICAL: Grade total_score + six dimensions + detailed_feedback from THIS audio alone.",
+    "Do NOT anchor near past scores. A 90+ take must score 90+ even if past takes were ~60–75.",
     rolling
       ? [
-          "ROLLING_COACH_SUMMARY (AI-only memory from prior sessions; update it in coach_summary):",
+          "ROLLING_COACH_SUMMARY (for actionable_advice / coach_summary update only):",
           rolling.slice(0, 2500),
         ].join("\n")
-      : "ROLLING_COACH_SUMMARY: (none yet — bootstrap from recent scores below).",
+      : "ROLLING_COACH_SUMMARY: (none).",
     recent.length
-      ? `Recent score snapshots (newest first, max ${recentLimit}):\n${sessionLines.join("\n")}`
+      ? `Recent score snapshots (advice context only, max ${recentLimit}):\n${sessionLines.join("\n")}`
       : "Recent score snapshots: none.",
     priorExercises.length
-      ? `Recent exercise titles to avoid repeating unless stuck: ${priorExercises.join("；")}`
+      ? `Recent exercise titles to avoid repeating in actionable_advice unless THIS clip shows the same fault: ${priorExercises.join("；")}`
       : null,
-    "Coaching rules from history:",
-    "- Use ROLLING_COACH_SUMMARY as the main long-term memory of strengths, stuck weaknesses, and what was already assigned.",
-    "- Recent score snapshots are for short-term trend only.",
-    "- If a weak dimension improved, acknowledge briefly and target another weakness.",
-    "- If the same weakness persists, escalate with a different/harder drill — do not recycle the same exercise title.",
+    "History rules:",
+    "- Never claim the singer is still stuck on a past flaw unless THIS clip clearly shows it.",
+    "- Use history only at the end in actionable_advice to compare progress / pick next drills.",
+    "- Update coach_summary from THIS session's objective outcome.",
   ]
     .filter(Boolean)
     .join("\n");

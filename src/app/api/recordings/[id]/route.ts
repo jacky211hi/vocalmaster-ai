@@ -151,6 +151,24 @@ export async function DELETE(
       );
     }
 
+    // Rolling coach memory lives on profiles — wipe it when no recordings remain.
+    const { count } = await supabase
+      .from("recordings")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id);
+    if ((count ?? 0) === 0) {
+      const { error: clearError } = await supabase
+        .from("profiles")
+        .update({ coach_summary: null })
+        .eq("id", user.id);
+      if (clearError) {
+        console.warn(
+          "[coach-summary] clear after last delete failed:",
+          clearError.message
+        );
+      }
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("delete recording error:", err);

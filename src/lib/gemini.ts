@@ -1,6 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import type { Locale } from "@/lib/i18n/config";
-import { geminiLanguageInstruction } from "@/lib/i18n/gemini-locale";
+import {
+  geminiLanguageInstruction,
+  geminiStructureInstruction,
+} from "@/lib/i18n/gemini-locale";
 import { lyricsPrompt, type LyricMatch } from "@/lib/lyrics";
 import { coachPitchBrief } from "@/lib/pitch/report";
 import type { PitchReport } from "@/lib/pitch/score";
@@ -11,56 +14,69 @@ import {
 import type { VocalAnalysisResult } from "@/lib/types";
 
 function buildSystemInstruction(locale: Locale): string {
-  return `You are a strict but encouraging professional vocal coach for "VocalMaster AI (AI 聲樂教練)".
+  return `You are a fair, expert vocal coach for "VocalMaster AI (AI 聲樂教練)".
 
-Evaluate the singing on SIX dimensions (0–100 ints):
-- timbre_score：音色 Timbre（聲線質感、個性）
-- phonation_score：發聲 Phonation（換聲、共鳴、喉位、擠壓等）
+## CRITICAL: score THIS clip independently (no historical anchoring)
+1. Listen and grade the CURRENT audio alone first.
+2. Set total_score and all six dimension scores 100% from what you hear NOW.
+3. USER_COACH_HISTORY / ROLLING_COACH_SUMMARY must NEVER lower, raise, or "cap" scores near a past average.
+4. History is ONLY allowed inside actionable_advice (progress compare / next drills). Never in scores, timed diagnosis, or six-dimension notes.
+
+## Score bands (strict — fight high-score inflation)
+Use these anchors for total_score (dimensions should be consistent with the same band):
+- **91–96 傳奇原唱 / 商業母帶級**: STRICTLY for flawless commercial studio masters or top ~0.1% touring vocalists (e.g. official Eason Chan / Shan Yichun masters). Amateur / home / phone / karaoke-room covers should almost NEVER hit 92+ (room acoustics, mic control, micro-pitch variance).
+- **82–89 民間高手 / 高水準翻唱**: Very strong pitch, smooth mix/falsetto transitions, great emotion (talented friend cover). Praise highly, but leave clear room under studio-master polish.
+- **80–84 清唱加分區**: Pleasant, emotive **a cappella** (清唱) with genuinely nice timbre and phrasing — reward here. Singing without BGM is harder for pitch anchoring; do NOT under-score such takes into the mid-70s when musicality is clearly strong.
+- **72–79 穩定業餘 / 進階練習者**: Good timbre & musicality; hits most notes; noticeable gaps in breath, passaggio tension, or pitch stability.
+- **60–71 基礎練習中**: Clear bottlenecks (strain, flat high phrases, running out of breath).
+Do not inflate strong amateur covers into the 91–96 band; also do not leave strong soft a cappella covers stuck at ~75 when they belong in ~80–84.
+
+Evaluate on SIX dimensions (0–100 ints) from THIS clip only:
+- timbre_score：音色 Timbre
+- phonation_score：發聲 Phonation
 - pitch_score：音準 Pitch
-- breath_score：呼吸 Breath（氣息支持）
-- rhythm_score：節奏 Rhythm（拍子、進出拍、groove）
-- dynamics_score：力度 Dynamics（強弱起伏、對比、情感張力）
+- breath_score：呼吸 Breath
+- rhythm_score：節奏 Rhythm
+- dynamics_score：力度 Dynamics
+
+## Vocal isolation / processing artifacts (do NOT penalize the singer)
+If the audio has slight phaseiness, high-frequency metallic thinness, watery/flanged mids, or abrupt tail cutoffs typical of AI vocal isolation (Demucs, Ultimate Vocal Remover, poppop.ai, etc.) or mic noise gates, treat those as **processing artifacts**, not the singer. Do NOT lower phonation_score, timbre_score, or breath_score for those digital artifacts.
+
+## Soft / airy falsetto vs pressed belting (CRITICAL — listen to volume & weight)
+Listen carefully to the **actual volume and vocal weight** in chorus / high phrases!
+- If the singer uses a soft, light, airy head voice or falsetto (弱混聲／氣假聲／輕柔頭聲): NEVER accuse them of 「壓喉」, 「死頂」, 「用喉部肌肉去頂」, or 「氣流壓力過大／高音爆發力硬推」.
+- For soft phonation, evaluate whether cord edges have enough closure (聲帶邊緣閉合) vs becoming too hollow / leaky / unstable (發虛／漏氣／飄).
+- Only diagnose pressed belting / throat push when you truly hear loud, heavy, squeezed chest-dominant force — not quiet airy highs.
+
+## Lyrics anti-hallucination (CRITICAL)
+Anchor ALL quoted lyric lines to OFFICIAL_LYRICS when provided, and/or your knowledge of the official lyrics for this songTitle + artist.
+- NEVER invent bizarre homophones (e.g. mishearing 好不具象→好不健康, 帶走陽光→如此冷酷).
+- Do NOT critique specific lyric words unless you are ≥100% sure of the official line at that moment.
+- If unsure which line is sung, write the unmatched placeholder — do not speech-recognize fake words and then coach those fakes.
+
+## Style vs flaw + always-useful 改善點
+Distinguish amateur technical faults (uncontrolled throat squeeze, running out of breath, cracked unintended breaks, chronic flat/sharp) from advanced stylistic choices (intentional raspy belt, emotional cry/sob, breathy phrase endings, controlled grit). Do NOT mark stylistic choices as amateur faults.
+For EVERY timed section's improvements field: never leave blank and never paste generic empty praise. Even for 80+ singers, give **specific advanced micro-polishing advice** (進階細節雕琢)—e.g. vowel modification, micro-timing/groove tightness, consonant clarity, vibrato tail control, or resonance consistency—tied to that timestamp.
 
 ${geminiLanguageInstruction(locale)}
 
-## detailed_feedback（AI diagnostic report）— thorough, timed
-Structure with these sections (use ## headings; translate section titles to the LANGUAGE above):
-1. **整體印象** / Overall impression: 2–4 sentences.
-2. **時間段分析** / Timed sections: split the clip (verse / chorus / high notes / ending; times on the user's recording mm:ss–mm:ss). If OFFICIAL_LYRICS are provided, each section title must copy one exact line from those lyrics — never speech-recognize lyrics from audio, never invent words. If unmatched, write 「未能對上歌詞」 (or English "Could not align lyrics"). If no lyrics, use section names only without quoted lyric lines. Each section:
-   - time range (e.g. \`0:00–0:25\`)
-   - strengths (pitch, breath, timbre, phonation, rhythm, dynamics)
-   - improvements (squeeze, pitch drift, short breath, register break, dragging, flat dynamics)
-3. **六維細評** / Six dimensions: brief note per dimension; strongest and weakest.
-4. **亮點與風險** / Highlights & risks: 1–2 strengths; 1–2 priority issues.
-
-Be specific — quote moments, vowels, register shifts, beat placement, or volume arcs. Aim for a thorough coach report (~600–1200 words / equivalent Chinese length). Avoid vague praise.
-
-## actionable_advice（practice tips）— actionable, personalized, low repetition
-The page already shows the advice card title — do not repeat that title in the body.
-If USER_COACH_HISTORY is present: open with 1–2 sentences on which dimensions improved or remain stuck, then list drills.
-Use level-3 headings for 2–4 drills:
-### 1. Drill name
-- **點做** / How:
-- **練幾耐** / How long:
-- **對應問題** / Targets:
-Pick varied drills by weakness (breath support, SOVT straw, sirens, humming, twang, pitch matching, metronome phrasing, messa di voce, etc.). Do not reuse recent exercise titles unless the same weakness did not improve — then escalate. Keep concise and executable.
+${geminiStructureInstruction(locale)}
 
 ## coach_summary（AI-only rolling memory — NOT shown to the user）
-Write a short English bullet brief (max ~1200 characters) for the NEXT analysis call.
-Merge any existing ROLLING_COACH_SUMMARY with THIS session's outcome.
-Include: recurring strengths, stuck weaknesses, whether prior drills helped, exercise titles just assigned, what to prioritize next.
-Do not paste full reports. Plain text / short bullets only.
+Short English bullet brief (max ~1200 characters) for the NEXT call only.
+Merge prior ROLLING_COACH_SUMMARY with THIS session's objective outcome.
+Do not use this field to justify lowering current scores.
 
-## vocal_range（shown to the user）
-Estimate from the audio + song metadata:
-- lowest_note / highest_note: scientific pitch (e.g. "A3", "E5") of sustained sung notes; ignore noise/cracks.
-- song_key: likely original / published key of this song (e.g. "G major", "A minor") from song title + artist knowledge when known; otherwise best estimate from the accompaniment/melody if audible.
-- user_key: key the singer actually performed in (e.g. "F major").
-- key_shift_semitones: integer = user tonic minus song tonic (negative = sung lower). 0 if same key.
-If MEASURED_VOCAL_RANGE is provided, keep those lowest/highest unless clearly wrong; still fill song_key / user_key / key_shift_semitones.
+## vocal_range（you alone set song_key, user_key, and shift — no chroma estimator）
+MUST fill vocal_range from your ears + song/artist knowledge:
+- song_key (aka original_key): published studio concert key for this track+artist when known (e.g. 陳奕迅〈葡萄成熟時〉 → "G major"). Never guess from borrowed-chord chroma / DSP.
+- user_key (aka sung_key): key of THIS performance. Isolated original vocals that match the studio key should usually equal song_key (e.g. both "G major"). Only report a different key if the take is clearly transposed.
+- key_shift_semitones: exact integer semitones = sung tonic − original tonic (G→A#/Bb = +3, not +1). Use 0 when keys match.
+- lowest_note / highest_note: true sung F0 extremes (climax may be A4/B4 even if DSP says F4) — OVERRIDE DSP.
+MEASURED_VOCAL_RANGE may include a wrong DSP user_key — ignore that field; trust your ears.
 
 Return ONLY JSON:
-{"total_score":int,"timbre_score":int,"phonation_score":int,"pitch_score":int,"breath_score":int,"rhythm_score":int,"dynamics_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown","coach_summary":"string","vocal_range":{"lowest_note":"A3","highest_note":"E5","song_key":"G major","user_key":"F major","key_shift_semitones":-2}}`;
+{"total_score":int,"timbre_score":int,"phonation_score":int,"pitch_score":int,"breath_score":int,"rhythm_score":int,"dynamics_score":int,"detailed_feedback":"markdown","actionable_advice":"markdown","coach_summary":"string","vocal_range":{"lowest_note":"B2","highest_note":"A4","song_key":"G major","user_key":"G major","key_shift_semitones":0}}`;
 }
 
 /**
@@ -256,25 +272,21 @@ export async function analyzeVocalAudio(params: {
     ? `\n${params.coachHistory}\n`
     : "";
   const rangeHint = params.measuredVocalRange
-    ? `\nMEASURED_VOCAL_RANGE (from local pitch detector — prefer for lowest/highest):\n${JSON.stringify(
+    ? `\nMEASURED_VOCAL_RANGE (F0 note hint only — ignore any key guess; often clips climax highs; OVERRIDE freely):\n${JSON.stringify(
         {
           lowest_note: params.measuredVocalRange.lowest_note,
           highest_note: params.measuredVocalRange.highest_note,
-          user_key: params.measuredVocalRange.user_key,
         }
       )}\n`
     : "";
   const userPrompt = `Song: ${params.songName}
 Artist: ${params.artist || "Unknown"}
 ${lyrics}${measured}${rangeHint}${history}
-Listen carefully to the full clip. Section times are on the user's recording, starting at 0:00.
-In detailed_feedback, mark which time ranges went well vs poorly.
-If OFFICIAL_LYRICS are present, quote those lines exactly in the section titles. Do not transcribe lyrics from the audio.
-If USER_COACH_HISTORY / ROLLING_COACH_SUMMARY is present: use it as long-term memory; briefly note progress or stuck weaknesses; for actionable_advice prioritize recurring weak dimensions, avoid repeating prior exercise titles when possible, and escalate if the same issue persists.
-Always return coach_summary (English, AI-only) updated for the next session.
-Always return vocal_range (lowest/highest notes, song_key, user_key, key_shift_semitones).
-Follow the LANGUAGE rule in the system instruction for detailed_feedback and actionable_advice (coach_summary stays English; vocal_range note/key labels stay in English pitch notation).
-Then give actionable_advice exercises tied to this clip's weak moments and this user's history.
+STEP 1 — Score THIS audio only with the bands: 91–96 = masters only; strong covers 82–89; pleasant emotive a cappella often **80–84** (do not strand at ~75). Soft airy falsetto ≠ 壓喉/死頂. Ignore isolation artifacts.
+STEP 2 — Timed sections: unique micro-polish 改善點. Soft quiet highs → evaluate 閉合 vs 發虛, never fake "pressed belt". Quote ONLY official lyrics (OFFICIAL_LYRICS / song knowledge)—never critique hallucinated words.
+STEP 3 — vocal_range: YOU set song_key + user_key + key_shift_semitones (correct math). True climax may be A4/B4.
+STEP 4 — actionable_advice only for history. Never say "still stuck" unless THIS clip shows it.
+Always return coach_summary (English). Follow LANGUAGE rules (no bilingual labels).
 Return the JSON evaluation.`;
 
   const contents = [

@@ -1,9 +1,17 @@
 import { hzToMidi, noteName } from "@/lib/pitch/notes";
-import { detectPitch } from "@/lib/pitch/yin";
+import {
+  detectPitchDetailed,
+  SINGING_MAX_HZ,
+  SINGING_MIN_HZ,
+} from "@/lib/pitch/yin";
 
 const ANALYSIS_SR = 16000;
-const WINDOW = 1024;
+const WINDOW = 2048;
 const HOP = 320;
+/** ~F2–C6 in MIDI (matches SINGING_MIN/MAX_HZ). */
+const MIN_MIDI = hzToMidi(SINGING_MIN_HZ);
+const MAX_MIDI = hzToMidi(SINGING_MAX_HZ);
+const MIN_CLARITY = 0.85;
 
 function downsample(
   input: Float32Array,
@@ -195,7 +203,9 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /**
- * Measure sung range from PCM. Uses 8th–92nd percentile to ignore cracks/noise.
+ * Measure sung range from PCM.
+ * Keeps only confident YIN frames (clarity ≥ 0.85), clamps F0 to 85–1050 Hz,
+ * then takes 5th / 98.5th percentile so climax peaks (G4–B4) are not clipped.
  */
 export function measureVocalRangeFromSamples(
   samples: Float32Array,
@@ -221,16 +231,18 @@ export function measureVocalRangeFromSamples(
   const last = Math.min(audio.length - WINDOW, Math.floor(duration * sr));
   for (let start = 0; start <= last; start += HOP) {
     const frame = audio.subarray(start, start + WINDOW);
-    const hz = detectPitch(frame, sr);
-    if (hz == null) continue;
-    const midi = hzToMidi(hz);
-    if (midi >= 36 && midi <= 84) midis.push(midi);
+    const est = detectPitchDetailed(frame, sr);
+    if (!est || est.clarity < MIN_CLARITY) continue;
+    if (est.hz < SINGING_MIN_HZ || est.hz > SINGING_MAX_HZ) continue;
+    const midi = hzToMidi(est.hz);
+    if (midi < MIN_MIDI || midi > MAX_MIDI) continue;
+    midis.push(midi);
   }
-  if (midis.length < 12) return null;
+  if (midis.length < 16) return null;
 
   const sorted = [...midis].sort((a, b) => a - b);
-  const low = percentile(sorted, 0.08);
-  const high = percentile(sorted, 0.92);
+  const low = percentile(sorted, 0.05);
+  const high = percentile(sorted, 0.985);
   if (high - low < 1) return null;
 
   const lowest_midi = Math.round(low * 10) / 10;
@@ -305,10 +317,12 @@ export function parseVocalRange(value: unknown): VocalRangeReport | null {
   ) {
     return null;
   }
+  const songLabel = parseKey(song_key)?.label ?? song_key;
+  const userLabel = parseKey(user_key)?.label ?? user_key;
+  // Prefer recomputed shift from keys (fixes bad model math like G→A# = +1).
   const shift =
-    typeof r.key_shift_semitones === "number"
-      ? r.key_shift_semitones
-      : keyShiftSemitones(song_key, user_key);
+    keyShiftSemitones(songLabel, userLabel) ??
+    (typeof r.key_shift_semitones === "number" ? r.key_shift_semitones : null);
   return {
     version: 1,
     lowest_midi,
@@ -316,8 +330,8 @@ export function parseVocalRange(value: unknown): VocalRangeReport | null {
     lowest_note: lowest_note ?? (lowest_midi != null ? noteName(lowest_midi) : null),
     highest_note:
       highest_note ?? (highest_midi != null ? noteName(highest_midi) : null),
-    song_key: parseKey(song_key)?.label ?? song_key,
-    user_key: parseKey(user_key)?.label ?? user_key,
+    song_key: songLabel,
+    user_key: userLabel,
     key_shift_semitones: shift,
     source:
       r.source === "measured" ||
@@ -328,7 +342,10 @@ export function parseVocalRange(value: unknown): VocalRangeReport | null {
   };
 }
 
-/** Merge measured PCM stats with Gemini musical-key judgement. */
+/**
+ * Merge DSP hint with Gemini. Gemini wins for song_key / user_key / range
+ * whenever it returns values — local YIN is only a soft fallback.
+ */
 export function mergeVocalRange(
   measured: Partial<VocalRangeReport> | null | undefined,
   fromGemini: Partial<VocalRangeReport> | null | undefined
@@ -336,40 +353,44 @@ export function mergeVocalRange(
   if (!measured && !fromGemini) return null;
   const m = measured ?? {};
   const g = fromGemini ?? {};
-  const lowest_midi =
+
+  const gLow =
+    parseNoteToMidi(g.lowest_note) ??
+    (typeof g.lowest_midi === "number" ? g.lowest_midi : null);
+  const gHigh =
+    parseNoteToMidi(g.highest_note) ??
+    (typeof g.highest_midi === "number" ? g.highest_midi : null);
+  const mLow =
     typeof m.lowest_midi === "number"
       ? m.lowest_midi
-      : typeof g.lowest_midi === "number"
-        ? g.lowest_midi
-        : parseNoteToMidi(m.lowest_note) ?? parseNoteToMidi(g.lowest_note);
-  const highest_midi =
+      : parseNoteToMidi(m.lowest_note);
+  const mHigh =
     typeof m.highest_midi === "number"
       ? m.highest_midi
-      : typeof g.highest_midi === "number"
-        ? g.highest_midi
-        : parseNoteToMidi(m.highest_note) ?? parseNoteToMidi(g.highest_note);
+      : parseNoteToMidi(m.highest_note);
+
+  // Prefer Gemini range; fall back to measured only when Gemini omitted notes.
+  const lowest_midi = gLow ?? mLow;
+  const highest_midi = gHigh ?? mHigh;
   const lowest_note =
+    g.lowest_note ||
     (lowest_midi != null ? noteName(lowest_midi) : null) ||
     m.lowest_note ||
-    g.lowest_note ||
     null;
   const highest_note =
+    g.highest_note ||
     (highest_midi != null ? noteName(highest_midi) : null) ||
     m.highest_note ||
-    g.highest_note ||
     null;
+
+  // Keys: Gemini only. Never trust DSP/chroma user_key (borrowed chords → false A# etc.).
   const song_key =
-    parseKey(g.song_key)?.label ??
-    g.song_key ??
-    parseKey(m.song_key)?.label ??
-    m.song_key ??
-    null;
+    parseKey(g.song_key)?.label ?? g.song_key ?? null;
   const user_key =
-    parseKey(m.user_key)?.label ??
-    m.user_key ??
-    parseKey(g.user_key)?.label ??
-    g.user_key ??
-    null;
+    parseKey(g.user_key)?.label ?? g.user_key ?? null;
+  // Always recompute shift from parsed keys so UI never shows "G→A# = +1".
+  const shift = keyShiftSemitones(song_key, user_key);
+
   const hasMeasured =
     typeof m.lowest_midi === "number" || typeof m.highest_midi === "number";
   const hasGemini = Boolean(
@@ -389,7 +410,7 @@ export function mergeVocalRange(
     highest_note,
     song_key,
     user_key,
-    key_shift_semitones: keyShiftSemitones(song_key, user_key),
+    key_shift_semitones: shift,
     source,
   });
 }

@@ -33,6 +33,14 @@ for (let i = 0; i < probe.length; i++) {
 const found = detectPitch(probe, sr);
 assert(found != null && Math.abs(found - 440) < 2, `YIN 440 expected, got ${found}`);
 
+// Sub-85 Hz rumble must never count as sung F0 (was falsely reporting D#2).
+const rumble = new Float32Array(4096);
+const rumbleHz = 77; // ~D#2
+for (let i = 0; i < rumble.length; i++) {
+  rumble[i] = 0.3 * Math.sin((2 * Math.PI * rumbleHz * i) / sr);
+}
+assert(detectPitch(rumble, sr) == null, "reject sub-85Hz rumble");
+
 const sustain = buildExercise("sustain", 69);
 const w = sustain.windows[0];
 const exact = sineWindow(

@@ -53,12 +53,13 @@ const withSummary = coachHistoryPrompt(rows, {
     "Stuck on breath support. Last drills: lip trill. Avoid repeating lip trill title.",
 });
 assert(withSummary?.includes("ROLLING_COACH_SUMMARY"), "rolling header");
+assert(withSummary!.includes("ADVICE ONLY"), "history advice-only banner");
 assert(withSummary!.includes("Stuck on breath"), "includes summary");
 assert(withSummary!.includes("像風一樣"), "includes recent song");
 assert(!withSummary!.includes("喉位偏高"), "does not dump old risk prose");
 
 const bootstrap = coachHistoryPrompt(rows);
-assert(bootstrap?.includes("none yet"), "bootstrap without summary");
+assert(bootstrap?.includes("ROLLING_COACH_SUMMARY: (none)"), "bootstrap without summary");
 
 assert(coachHistoryPrompt([]) == null, "empty history");
 

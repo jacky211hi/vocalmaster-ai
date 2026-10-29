@@ -1,8 +1,11 @@
-import { pickLyricHit } from "./lyrics";
+import { looksTraditional, pickLyricHit } from "./lyrics";
+import { Converter as ToTraditional } from "opencc-js/cn2t";
 
 function assert(cond: unknown, message: string) {
   if (!cond) throw new Error(message);
 }
+
+const toTraditional = ToTraditional({ from: "cn", to: "t" });
 
 const hits = [
   {
@@ -26,6 +29,12 @@ const hits = [
   {
     trackName: "像风一样 (Live)",
     artistName: "单依纯",
+    plainLyrics: "像风一样 你靠近云都下降",
+    syncedLyrics: "[00:46.89] 像风一样 你靠近云都下降",
+  },
+  {
+    trackName: "像風一樣",
+    artistName: "單依純",
     plainLyrics: "像風一樣 你靠近雲都下降",
     syncedLyrics: "[00:46.89] 像風一樣 你靠近雲都下降",
   },
@@ -49,10 +58,12 @@ assert(wrongArtist == null, "reject different artist");
 const missing = pickLyricHit("沒有這首歌", "陳奕迅", hits);
 assert(missing == null, "missing song");
 
-const tradCover = pickLyricHit("像風一樣", "單依純", hits);
+const tradCover = pickLyricHit("像風一樣", "單依純", hits, {
+  preferTraditional: true,
+});
 assert(
-  tradCover?.artistName === "单依纯",
-  "trad input matches simplified cover metadata"
+  tradCover?.artistName === "單依純",
+  "trad input prefers traditional cover metadata"
 );
 assert(
   Boolean(tradCover?.syncedLyrics?.includes("像風一樣")),
@@ -60,6 +71,10 @@ assert(
 );
 
 const simpSame = pickLyricHit("像风一样", "单依纯", hits);
-assert(simpSame?.artistName === "单依纯", "simplified input still matches");
+assert(simpSame?.artistName === "单依纯" || simpSame?.artistName === "單依純", "simplified input still matches");
+
+assert(looksTraditional("陳奕迅"), "trad detect");
+assert(!looksTraditional("陈奕迅"), "simp detect");
+assert(toTraditional("葡萄成熟时") === "葡萄成熟時", "s2t lyrics");
 
 console.log("lyrics pick ok");
