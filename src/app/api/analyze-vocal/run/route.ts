@@ -15,6 +15,10 @@ import { getRequestLocale } from "@/lib/i18n/server";
 import { lookupLyrics, looksTraditional } from "@/lib/lyrics";
 import { measuredMarkdown, parsePitchReport } from "@/lib/pitch/report";
 import {
+  applyKnownSongKey,
+  lookupKnownSongKey,
+} from "@/lib/pitch/known-keys";
+import {
   mergeVocalRange,
   parseVocalRange,
 } from "@/lib/pitch/vocal-range";
@@ -76,9 +80,23 @@ export async function POST(request: Request) {
     if (recording.user_id !== user.id) {
       return NextResponse.json({ error: "無權分析此錄音" }, { status: 403 });
     }
-    if (!isAnalyzingFeedback(recording.ai_feedback_md)) {
+    const force = body?.force === true;
+    if (!force && !isAnalyzingFeedback(recording.ai_feedback_md)) {
       // Already done — idempotent success
       return NextResponse.json({ ok: true, id, already_done: true });
+    }
+    if (force && !isAnalyzingFeedback(recording.ai_feedback_md)) {
+      const { error: markError } = await supabase
+        .from("recordings")
+        .update({ ai_feedback_md: ANALYZING_MARKER })
+        .eq("id", id)
+        .eq("user_id", user.id);
+      if (markError) {
+        return NextResponse.json(
+          { error: `無法重跑：${markError.message}` },
+          { status: 500 }
+        );
+      }
     }
     if (!recording.storage_path) {
       return NextResponse.json({ error: "缺少音訊檔" }, { status: 400 });
@@ -185,9 +203,9 @@ export async function POST(request: Request) {
       locale,
       measuredVocalRange: measuredRange,
     });
-    const vocalRange = mergeVocalRange(
-      measuredRange,
-      analysis.vocal_range ?? null
+    const vocalRange = applyKnownSongKey(
+      mergeVocalRange(measuredRange, analysis.vocal_range ?? null),
+      lookupKnownSongKey(recording.song_name, recording.artist)
     );
     const pitchScore = pitchReport
       ? pitchReport.pitchScore

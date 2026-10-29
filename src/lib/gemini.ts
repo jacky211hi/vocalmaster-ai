@@ -69,8 +69,9 @@ Do not use this field to justify lowering current scores.
 
 ## vocal_range（you alone set song_key, user_key, and shift — no chroma estimator）
 MUST fill vocal_range from your ears + song/artist knowledge:
-- song_key (aka original_key): published studio concert key for this track+artist when known (e.g. 陳奕迅〈葡萄成熟時〉 → "G major"). Never guess from borrowed-chord chroma / DSP.
-- user_key (aka sung_key): key of THIS performance. Isolated original vocals that match the studio key should usually equal song_key (e.g. both "G major"). Only report a different key if the take is clearly transposed.
+- song_key (aka original_key): **sounding concert key** for this track+artist when known. Never guess from borrowed-chord chroma / DSP. Never confuse guitar **指法調 / Capo shape** with concert pitch (e.g. G-shape Capo 2 still sounds as A).
+- Known anchors (use these when song+artist match): 陳奕迅〈葡萄成熟時〉→ "G major"; 單依純〈像風一樣〉(好聲音 Live) → "A major" (NOT F major; NOT "G调弹唱").
+- user_key (aka sung_key): key of THIS performance. Isolated original vocals that match the studio key should usually equal song_key. Only report a different key if the take is clearly transposed.
 - key_shift_semitones: exact integer semitones = sung tonic − original tonic (G→A#/Bb = +3, not +1). Use 0 when keys match.
 - lowest_note / highest_note: true sung F0 extremes (climax may be A4/B4 even if DSP says F4) — OVERRIDE DSP.
 MEASURED_VOCAL_RANGE may include a wrong DSP user_key — ignore that field; trust your ears.
