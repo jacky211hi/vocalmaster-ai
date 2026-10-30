@@ -68,6 +68,9 @@ export async function POST(request: Request) {
     if (!songName) {
       return NextResponse.json({ error: "請輸入歌名" }, { status: 400 });
     }
+    if (!artist) {
+      return NextResponse.json({ error: "請輸入歌手" }, { status: 400 });
+    }
     if (!storagePath) {
       return NextResponse.json({ error: "缺少音訊路徑" }, { status: 400 });
     }

@@ -21,7 +21,6 @@ function pickMimeType() {
 }
 
 export function AudioCapture({ onAudioReady, disabled }: Props) {
-  const [mode, setMode] = useState<"record" | "upload">("record");
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -35,6 +34,7 @@ export function AudioCapture({ onAudioReady, disabled }: Props) {
   const streamRef = useRef<MediaStream | null>(null);
   const dragDepthRef = useRef(0);
   const previewUrlRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearPreview = useCallback(() => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
@@ -149,7 +149,7 @@ export function AudioCapture({ onAudioReady, disabled }: Props) {
   function onDragEnter(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (disabled) return;
+    if (disabled || recording) return;
     dragDepthRef.current += 1;
     setDragging(true);
   }
@@ -167,6 +167,7 @@ export function AudioCapture({ onAudioReady, disabled }: Props) {
   function onDragOver(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
+    if (disabled || recording) return;
     if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
   }
 
@@ -175,8 +176,13 @@ export function AudioCapture({ onAudioReady, disabled }: Props) {
     e.stopPropagation();
     dragDepthRef.current = 0;
     setDragging(false);
-    if (disabled) return;
+    if (disabled || recording) return;
     acceptFile(e.dataTransfer.files?.[0]);
+  }
+
+  function openFilePicker() {
+    if (disabled || recording) return;
+    fileInputRef.current?.click();
   }
 
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
@@ -184,97 +190,104 @@ export function AudioCapture({ onAudioReady, disabled }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="inline-flex rounded-2xl border border-white/10 bg-black/30 p-1">
-        <button
-          type="button"
-          disabled={disabled || recording}
-          onClick={() => setMode("record")}
+      <div
+        role="button"
+        tabIndex={disabled || recording ? -1 : 0}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openFilePicker();
+          }
+        }}
+        className={cn(
+          "rounded-3xl border border-dashed bg-black/20 p-8 text-center transition",
+          dragging
+            ? "border-amber-400 bg-amber-400/10 scale-[1.01]"
+            : "border-white/15",
+          !disabled && !recording && "hover:border-amber-400/40 hover:bg-amber-400/5"
+        )}
+      >
+        <div
           className={cn(
-            "rounded-xl px-4 py-2 text-sm font-medium transition",
-            mode === "record"
-              ? "bg-amber-400 text-slate-950"
-              : "text-white/60 hover:text-white"
-          )}
-        >
-          錄音
-        </button>
-        <button
-          type="button"
-          disabled={disabled || recording}
-          onClick={() => setMode("upload")}
-          className={cn(
-            "rounded-xl px-4 py-2 text-sm font-medium transition",
-            mode === "upload"
-              ? "bg-amber-400 text-slate-950"
-              : "text-white/60 hover:text-white"
-          )}
-        >
-          上傳
-        </button>
-      </div>
-
-      {mode === "record" ? (
-        <div className="rounded-3xl border border-dashed border-white/15 bg-black/20 p-8 text-center">
-          <div
-            className={cn(
-              "mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full transition",
-              recording
-                ? "animate-pulse bg-rose-500/30 text-rose-300 ring-4 ring-rose-400/30"
+            "mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full transition",
+            recording
+              ? "animate-pulse bg-rose-500/30 text-rose-300 ring-4 ring-rose-400/30"
+              : dragging
+                ? "bg-amber-400/25 text-amber-200"
                 : "bg-amber-400/15 text-amber-300"
-            )}
-          >
-            <Mic className="h-8 w-8" />
-          </div>
-          <p className="mb-1 font-[family-name:var(--font-display)] text-2xl text-white">
-            {recording ? `${mm}:${ss}` : "準備錄音"}
-          </p>
-          <p className="mb-6 text-sm text-white/50">
-            用瀏覽器直接錄下你的歌聲
-          </p>
+          )}
+        >
+          {dragging ? <Upload className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
+        </div>
+        <p className="mb-1 font-[family-name:var(--font-display)] text-2xl text-white">
+          {recording
+            ? `${mm}:${ss}`
+            : dragging
+              ? "放開以上傳檔案"
+              : "錄音或上傳"}
+        </p>
+        <p className="mb-6 text-sm text-white/50">
+          {recording
+            ? "錄音中…完成後撳停止"
+            : "撳開始錄音，或拖曳／選擇 .m4a / .mp3 / .wav 到呢度"}
+        </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-3">
           {recording ? (
-            <Button type="button" variant="danger" onClick={stopRecording} disabled={disabled}>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={(e) => {
+                e.stopPropagation();
+                stopRecording();
+              }}
+              disabled={disabled}
+            >
               <Square className="h-4 w-4" />
               停止
             </Button>
           ) : (
-            <Button type="button" onClick={startRecording} disabled={disabled}>
-              <Mic className="h-4 w-4" />
-              開始錄音
-            </Button>
+            <>
+              <Button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void startRecording();
+                }}
+                disabled={disabled}
+              >
+                <Mic className="h-4 w-4" />
+                開始錄音
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openFilePicker();
+                }}
+                disabled={disabled}
+              >
+                <Upload className="h-4 w-4" />
+                選擇檔案
+              </Button>
+            </>
           )}
         </div>
-      ) : (
-        <label
-          onDragEnter={onDragEnter}
-          onDragLeave={onDragLeave}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          className={cn(
-            "flex cursor-pointer flex-col items-center rounded-3xl border border-dashed bg-black/20 p-8 transition",
-            dragging
-              ? "border-amber-400 bg-amber-400/10 scale-[1.01]"
-              : "border-white/15 hover:border-amber-400/40 hover:bg-amber-400/5"
-          )}
-        >
-          <Upload
-            className={cn(
-              "mb-3 h-8 w-8 transition",
-              dragging ? "text-amber-200" : "text-amber-300"
-            )}
-          />
-          <p className="mb-1 text-white">
-            {dragging ? "放開以上傳檔案" : "拖曳或點擊上傳錄音"}
-          </p>
-          <p className="text-sm text-white/45">支援 .m4a / .mp3 / .wav</p>
-          <input
-            type="file"
-            accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/wav"
-            className="hidden"
-            disabled={disabled}
-            onChange={onFileChange}
-          />
-        </label>
-      )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/wav"
+          className="hidden"
+          disabled={disabled || recording}
+          onChange={onFileChange}
+        />
+      </div>
 
       {previewUrl && (
         <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center">

@@ -56,8 +56,9 @@ const merged = mergeVocalRange(
 assert(merged?.lowest_note === "B2", "gemini overrides false DSP low");
 assert(merged?.highest_note === "A4", "gemini overrides false DSP high");
 assert(merged?.song_key === "G major", "gemini song key");
-assert(merged?.user_key === "G major", "gemini user key");
-assert(merged?.key_shift_semitones === 0, "shift");
+// Gemini mirrored song→user; prefer measured sung-key instead of forcing equal.
+assert(merged?.user_key === "A# major", "measured sung key when gemini mirrored");
+assert(merged?.key_shift_semitones === 3, "G→A# shift from measured user");
 assert(merged?.source === "measured+gemini", "source");
 
 const shiftFix = mergeVocalRange(

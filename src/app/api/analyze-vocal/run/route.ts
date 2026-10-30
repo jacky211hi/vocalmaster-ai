@@ -192,6 +192,10 @@ export async function POST(request: Request) {
     }
 
     const measuredRange = parseVocalRange(recording.vocal_range);
+    const knownSongKey = lookupKnownSongKey(
+      recording.song_name,
+      recording.artist
+    );
     const analysis = await analyzeVocalAudio({
       audioBase64: buffer.toString("base64"),
       mimeType,
@@ -202,10 +206,11 @@ export async function POST(request: Request) {
       coachHistory,
       locale,
       measuredVocalRange: measuredRange,
+      knownSongKey,
     });
     const vocalRange = applyKnownSongKey(
       mergeVocalRange(measuredRange, analysis.vocal_range ?? null),
-      lookupKnownSongKey(recording.song_name, recording.artist)
+      knownSongKey
     );
     const pitchScore = pitchReport
       ? pitchReport.pitchScore

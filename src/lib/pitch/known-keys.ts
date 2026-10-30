@@ -6,13 +6,15 @@ import {
 
 /**
  * Curated sounding concert keys (not guitar fingerings / Capo shapes).
- * Used to correct Gemini when it confuses Capo charts with concert pitch.
+ * Used as the authoritative original key when song (+ optional artist) matches.
  */
 const KNOWN: Array<{ song: string; artist?: string; key: string }> = [
   { song: "像風一樣", artist: "單依純", key: "A major" },
   { song: "像风一样", artist: "单依纯", key: "A major" },
   { song: "葡萄成熟時", artist: "陳奕迅", key: "G major" },
   { song: "葡萄成熟时", artist: "陈奕迅", key: "G major" },
+  { song: "十面埋伏", artist: "陳奕迅", key: "C major" },
+  { song: "十面埋伏", artist: "陈奕迅", key: "C major" },
 ];
 
 function norm(s: string): string {
@@ -20,75 +22,99 @@ function norm(s: string): string {
     .normalize("NFKC")
     .trim()
     .toLowerCase()
+    .replace(/[（(][^）)]*[）)]/g, "") // drop (Live) / （現場）
     .replace(/[\s\-_/·．.]+/g, "");
 }
+
+export type KnownSongKeyHit = {
+  key: string;
+  /** Canonical artist from catalog when matched. */
+  artist: string | null;
+  verified: true;
+};
 
 /** Look up published concert key for song (+ optional artist). */
 export function lookupKnownSongKey(
   songName: string,
   artist?: string | null
 ): string | null {
+  return lookupKnownSongKeyHit(songName, artist)?.key ?? null;
+}
+
+export function lookupKnownSongKeyHit(
+  songName: string,
+  artist?: string | null
+): KnownSongKeyHit | null {
   const song = norm(songName);
   if (!song) return null;
   const art = artist ? norm(artist) : "";
-  const withArtist = art
-    ? KNOWN.find((k) => norm(k.song) === song && k.artist && norm(k.artist) === art)
-    : null;
-  if (withArtist) return parseKey(withArtist.key)?.label ?? withArtist.key;
-  const bySong = KNOWN.find((k) => norm(k.song) === song);
-  return bySong ? parseKey(bySong.key)?.label ?? bySong.key : null;
-}
 
-function transposeKeyLabel(key: string, semitones: number): string | null {
-  const parsed = parseKey(key);
-  if (!parsed) return null;
-  const pc = ((parsed.pc + semitones) % 12 + 12) % 12;
-  const names = [
-    "C",
-    "C#",
-    "D",
-    "D#",
-    "E",
-    "F",
-    "F#",
-    "G",
-    "G#",
-    "A",
-    "A#",
-    "B",
-  ];
-  return parsed.minor ? `${names[pc]} minor` : `${names[pc]} major`;
+  if (art) {
+    const withArtist = KNOWN.find(
+      (k) => norm(k.song) === song && k.artist && norm(k.artist) === art
+    );
+    if (withArtist) {
+      return {
+        key: parseKey(withArtist.key)?.label ?? withArtist.key,
+        artist: withArtist.artist ?? null,
+        verified: true,
+      };
+    }
+  }
+
+  // Artist missing / mismatched — still trust unique song title in catalog.
+  const bySong = KNOWN.filter((k) => norm(k.song) === song);
+  if (bySong.length === 0) return null;
+  const keys = new Set(
+    bySong.map((k) => parseKey(k.key)?.label ?? k.key)
+  );
+  if (keys.size !== 1) return null;
+  const hit = bySong[0];
+  return {
+    key: parseKey(hit.key)?.label ?? hit.key,
+    artist: hit.artist ?? null,
+    verified: true,
+  };
 }
 
 /**
- * Force song_key from curated catalog. Preserve Gemini's relative
- * transposition (if it said same-as-original → keep 0; else keep shift).
+ * Force song_key from curated catalog only.
+ * Never rewrite user_key — sung key must stay an independent estimate.
  */
 export function applyKnownSongKey(
   range: VocalRangeReport | null,
   knownSongKey: string | null
 ): VocalRangeReport | null {
-  if (!range || !knownSongKey) return range;
+  if (!knownSongKey) return range;
   const known = parseKey(knownSongKey)?.label ?? knownSongKey;
-  const gSong = parseKey(range.song_key);
-  const gUser = parseKey(range.user_key);
-
-  let user_key = range.user_key;
-  if (gSong && gUser) {
-    const relative = gUser.pc - gSong.pc;
-    // Same key reported (even if both wrong) → align user to known original.
-    if (((relative % 12) + 12) % 12 === 0) {
-      user_key = known;
-    } else {
-      user_key = transposeKeyLabel(known, relative) ?? range.user_key;
-    }
-  } else if (!range.user_key) {
-    user_key = known;
+  if (!range) {
+    return parseVocalRange({
+      version: 1,
+      lowest_note: null,
+      highest_note: null,
+      song_key: known,
+      user_key: null,
+      key_shift_semitones: null,
+      source: "gemini",
+    });
   }
-
   return parseVocalRange({
     ...range,
     song_key: known,
-    user_key,
   });
+}
+
+/** Display-time correction: catalog song_key wins; recompute shift vs user_key. */
+export function resolveVocalRangeForDisplay(
+  report: VocalRangeReport | null,
+  songName: string,
+  artist?: string | null
+): { report: VocalRangeReport | null; songKeyVerified: boolean } {
+  if (!report) return { report: null, songKeyVerified: false };
+  const hit = lookupKnownSongKeyHit(songName, artist);
+  if (!hit) return { report, songKeyVerified: false };
+  return {
+    report: applyKnownSongKey(report, hit.key),
+    songKeyVerified: true,
+  };
 }

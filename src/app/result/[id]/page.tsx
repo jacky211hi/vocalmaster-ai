@@ -214,7 +214,11 @@ export default async function ResultPage({
         {isOwner && pitchReport && <PitchReportPanel report={pitchReport} />}
 
         {isOwner && !analyzing && vocalRange && (
-          <VocalRangePanel report={vocalRange} />
+          <VocalRangePanel
+            report={vocalRange}
+            songName={recording.song_name}
+            artist={recording.artist}
+          />
         )}
 
         {analyzing && isOwner ? (

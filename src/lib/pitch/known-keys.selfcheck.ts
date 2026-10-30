@@ -1,6 +1,8 @@
 import {
   applyKnownSongKey,
   lookupKnownSongKey,
+  lookupKnownSongKeyHit,
+  resolveVocalRangeForDisplay,
 } from "@/lib/pitch/known-keys";
 import { parseVocalRange } from "@/lib/pitch/vocal-range";
 
@@ -17,6 +19,20 @@ assert(
   lookupKnownSongKey("葡萄成熟時", "陳奕迅") === "G major",
   "eason G"
 );
+assert(
+  lookupKnownSongKey("十面埋伏", "陳奕迅") === "C major",
+  "ambush C"
+);
+// Empty artist still resolves unique catalog song
+assert(lookupKnownSongKey("十面埋伏", "") === "C major", "ambush no artist");
+assert(
+  lookupKnownSongKey("十面埋伏 (Live)", null) === "C major",
+  "ambush live suffix"
+);
+assert(
+  lookupKnownSongKeyHit("十面埋伏", "")?.verified === true,
+  "verified hit"
+);
 
 const fixed = applyKnownSongKey(
   parseVocalRange({
@@ -31,23 +47,24 @@ const fixed = applyKnownSongKey(
   "A major"
 );
 assert(fixed?.song_key === "A major", `song ${fixed?.song_key}`);
-assert(fixed?.user_key === "A major", `user ${fixed?.user_key}`);
-assert(fixed?.key_shift_semitones === 0, `shift ${fixed?.key_shift_semitones}`);
+assert(fixed?.user_key === "F major", `user kept ${fixed?.user_key}`);
+assert(fixed?.key_shift_semitones === -4, `shift ${fixed?.key_shift_semitones}`);
 
-const shifted = applyKnownSongKey(
+const display = resolveVocalRangeForDisplay(
   parseVocalRange({
     version: 1,
-    lowest_note: "G3",
-    highest_note: "C5",
-    song_key: "F major",
-    user_key: "G major", // +2 relative to wrong F
-    key_shift_semitones: 2,
+    lowest_note: "B2",
+    highest_note: "F#4",
+    song_key: "D major",
+    user_key: "D# minor",
+    key_shift_semitones: 1,
     source: "gemini",
   }),
-  "A major"
+  "十面埋伏",
+  ""
 );
-assert(shifted?.song_key === "A major", "shifted song");
-assert(shifted?.user_key === "B major", `shifted user ${shifted?.user_key}`);
-assert(shifted?.key_shift_semitones === 2, "keep relative +2");
+assert(display.songKeyVerified, "display verified");
+assert(display.report?.song_key === "C major", "display corrects D→C");
+assert(display.report?.user_key === "D# minor", "keep sung key");
 
 console.log("known-keys ok");

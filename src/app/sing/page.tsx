@@ -99,6 +99,10 @@ export default function SingPage() {
       setError("請輸入歌名");
       return;
     }
+    if (!opts.artist.trim()) {
+      setError("請輸入歌手");
+      return;
+    }
     if (opts.file.size > 20 * 1024 * 1024) {
       setError("檔案請小於 20MB");
       return;
@@ -271,12 +275,13 @@ export default function SingPage() {
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <label className="text-sm text-white/70">歌手</label>
+                  <label className="text-sm text-white/70">歌手 *</label>
                   <Input
                     value={artist}
                     onChange={(e) => setArtist(e.target.value)}
-                    placeholder="例如：王力宏"
+                    placeholder="例如：陳奕迅"
                     disabled={loading}
+                    required
                   />
                 </div>
               </div>

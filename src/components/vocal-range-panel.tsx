@@ -1,5 +1,6 @@
 import { ArrowDownUp, Music2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { resolveVocalRangeForDisplay } from "@/lib/pitch/known-keys";
 import {
   formatKeyShift,
   type AggregateVocalRange,
@@ -64,12 +65,26 @@ function RangeMeter({
   );
 }
 
-export function VocalRangePanel({ report }: { report: VocalRangeReport }) {
+export function VocalRangePanel({
+  report,
+  songName,
+  artist,
+}: {
+  report: VocalRangeReport;
+  songName?: string;
+  artist?: string | null;
+}) {
+  const { report: resolved, songKeyVerified } = resolveVocalRangeForDisplay(
+    report,
+    songName ?? "",
+    artist
+  );
+  const view = resolved ?? report;
   const span =
-    report.lowest_midi != null && report.highest_midi != null
-      ? Math.round(report.highest_midi - report.lowest_midi)
+    view.lowest_midi != null && view.highest_midi != null
+      ? Math.round(view.highest_midi - view.lowest_midi)
       : null;
-  const shiftLabel = formatKeyShift(report.key_shift_semitones);
+  const shiftLabel = formatKeyShift(view.key_shift_semitones);
 
   return (
     <Card className="mb-6 border-teal-400/20 bg-gradient-to-br from-teal-400/10 via-white/[0.03] to-transparent">
@@ -81,25 +96,27 @@ export function VocalRangePanel({ report }: { report: VocalRangeReport }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-white/40">
-          音域取自信賴度高嘅人聲基頻；原曲 Key 以歌曲／歌手公開調性為主（唔係結他 Capo 指法調）。
+          音域取自信賴度高嘅人聲基頻；原曲 Key 優先用內建已核對曲庫（唔係結他 Capo 指法調），曲庫冇先先估計。
         </p>
         <NotePair
-          low={report.lowest_note}
-          high={report.highest_note}
+          low={view.lowest_note}
+          high={view.highest_note}
           span={span}
         />
-        <RangeMeter lowMidi={report.lowest_midi} highMidi={report.highest_midi} />
+        <RangeMeter lowMidi={view.lowest_midi} highMidi={view.highest_midi} />
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <p className="text-xs text-white/40">原曲 Key（公開／估計）</p>
+            <p className="text-xs text-white/40">
+              {songKeyVerified ? "原曲 Key（已核對）" : "原曲 Key（估計）"}
+            </p>
             <p className="mt-1 text-lg font-semibold text-white">
-              {report.song_key ?? "—"}
+              {view.song_key ?? "—"}
             </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
             <p className="text-xs text-white/40">你唱嘅 Key（估計）</p>
             <p className="mt-1 text-lg font-semibold text-amber-200">
-              {report.user_key ?? "—"}
+              {view.user_key ?? "—"}
             </p>
             {shiftLabel && (
               <p className="mt-1 text-xs text-white/45">{shiftLabel}</p>

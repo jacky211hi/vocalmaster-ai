@@ -383,11 +383,17 @@ export function mergeVocalRange(
     m.highest_note ||
     null;
 
-  // Keys: Gemini only. Never trust DSP/chroma user_key (borrowed chords → false A# etc.).
+  // song_key: Gemini / known catalog only (never DSP).
   const song_key =
     parseKey(g.song_key)?.label ?? g.song_key ?? null;
+  const gUser = parseKey(g.user_key)?.label ?? g.user_key ?? null;
+  const mUser = parseKey(m.user_key)?.label ?? m.user_key ?? null;
+  // user_key must be independent of song_key. Gemini often mirrors song→user;
+  // when it does (or omits user), prefer measured sung-key estimate.
   const user_key =
-    parseKey(g.user_key)?.label ?? g.user_key ?? null;
+    gUser && song_key && gUser !== song_key
+      ? gUser
+      : mUser ?? gUser ?? null;
   // Always recompute shift from parsed keys so UI never shows "G→A# = +1".
   const shift = keyShiftSemitones(song_key, user_key);
 

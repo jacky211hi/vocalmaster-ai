@@ -39,11 +39,16 @@ export function extractExerciseNames(advice: string): string[] {
   return names;
 }
 
-function scoreLine(row: CoachHistoryRow): string {
-  const parts = SCORE_DIMENSIONS.map((d) => `${d.short}=${row[d.key]}`).join(
-    " "
-  );
-  return `total=${row.total_score} ${parts}`;
+/** Weakest dim labels for a row — names only, no numeric scores (avoids 83-echo). */
+function weakDimNames(row: CoachHistoryRow, topN = 2): string[] {
+  return SCORE_DIMENSIONS.map((d) => ({
+    short: d.short,
+    score: row[d.key] as number,
+  }))
+    .filter((d) => typeof d.score === "number" && d.score > 0)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, topN)
+    .map((d) => d.short);
 }
 
 /** Average the weakest 1–2 dimensions across recent rows (for personal advice). */
@@ -73,12 +78,23 @@ export function recurringWeakDims(
     }))
     .sort((a, b) => a.avg - b.avg)
     .slice(0, topN)
-    .map((d) => `${d.short}(avg~${Math.round(d.avg)})`);
+    .map((d) => d.short); // names only — never leak avg numbers into the prompt
+}
+
+function qualitativeTrend(
+  latest: CoachHistoryRow,
+  previous: CoachHistoryRow | undefined
+): string | null {
+  if (!previous) return `Most recent session: 〈${latest.song_name}〉.`;
+  const delta = latest.total_score - previous.total_score;
+  const label =
+    delta >= 3 ? "improved vs prior session" : delta <= -3 ? "dipped vs prior session" : "similar overall vs prior session";
+  return `Most recent 〈${latest.song_name}〉 was ${label} relative to 〈${previous.song_name}〉 (qualitative only — no score numbers).`;
 }
 
 /**
- * Slim history for Gemini: rolling coach_summary + last 1–2 score snapshots.
- * Avoids re-sending full past reports/advice bodies.
+ * Slim history for Gemini: rolling coach_summary + last sessions WITHOUT numeric scores.
+ * Exact totals/dims in the prompt cause models to echo ~83.
  */
 export function coachHistoryPrompt(
   rows: CoachHistoryRow[],
@@ -99,12 +115,16 @@ export function coachHistoryPrompt(
   const sessionLines = recent.map((row, i) => {
     const day = row.created_at.slice(0, 10);
     const drills = extractExerciseNames(row.actionable_advice || "");
+    const weak = weakDimNames(row, 2);
     return [
-      `${i + 1}. ${day} 〈${row.song_name}〉 ${row.artist || "未知"} · ${scoreLine(row)}`,
+      `${i + 1}. ${day} 〈${row.song_name}〉 ${row.artist || "未知"}`,
+      weak.length ? `   Weaker dims then: ${weak.join("、")}` : null,
       drills.length
         ? `   Prior exercises: ${drills.join("；")}`
         : "   Prior exercises: (none listed)",
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   });
 
   const priorExercises = [
@@ -113,25 +133,13 @@ export function coachHistoryPrompt(
     ),
   ].slice(0, 8);
   const weak = recurringWeakDims(recent.length ? recent : done, 2);
-  const latest = recent[0];
-  const previous = recent[1];
-  const trend =
-    latest && previous
-      ? `Latest total ${latest.total_score} vs previous ${previous.total_score} (${
-          latest.total_score - previous.total_score >= 3
-            ? "up"
-            : previous.total_score - latest.total_score >= 3
-              ? "down"
-              : "flat"
-        }).`
-      : latest
-        ? `Latest total ${latest.total_score} (only one prior snapshot).`
-        : null;
+  const trend = recent[0]
+    ? qualitativeTrend(recent[0], recent[1])
+    : null;
 
   return [
     "USER_COACH_HISTORY (ADVICE ONLY — never for scores or timed diagnosis):",
-    "CRITICAL: Grade total_score + six dimensions + detailed_feedback from THIS audio alone.",
-    "Do NOT anchor near past scores. A 90+ take must score 90+ even if past takes were ~60–75.",
+    "CRITICAL: Grade THIS audio alone. History has NO score numbers on purpose — do not invent or echo past totals.",
     rolling
       ? [
           "ROLLING_COACH_SUMMARY (personal long-term memory for advice + coach_summary update):",
@@ -139,17 +147,17 @@ export function coachHistoryPrompt(
         ].join("\n")
       : "ROLLING_COACH_SUMMARY: (none).",
     recent.length
-      ? `Recent score snapshots (advice context only, max ${recentLimit}):\n${sessionLines.join("\n")}`
-      : "Recent score snapshots: none.",
+      ? `Recent sessions (advice context only, max ${recentLimit}):\n${sessionLines.join("\n")}`
+      : "Recent sessions: none.",
     weak.length
-      ? `Recurring weaker dims for THIS singer (from recent snapshots): ${weak.join(", ")}.`
+      ? `Recurring weaker dims for THIS singer: ${weak.join("、")}.`
       : null,
     trend,
     priorExercises.length
       ? `Recent exercise titles — evolve or escalate; do not copy-paste the same title unless THIS clip shows the same fault: ${priorExercises.join("；")}`
       : null,
     "REQUIRED in actionable_advice when any history above exists:",
-    "1) Start with heading ### 個人進度 (or ### Personal progress / ### 個人進度對比) — 2–4 sentences naming THIS singer's pattern, comparing THIS take vs latest snapshot (cite song + totals/dims), and what to focus next.",
+    "1) Start with heading ### 個人進度 (or ### Personal progress / ### 個人進度對比) — 2–4 sentences naming THIS singer's pattern, comparing THIS take vs latest session by song + which dims feel stronger/weaker (no fabricated past score numbers), and what to focus next.",
     "2) Then 2–4 drill ### headings tailored to THIS clip's faults AND the recurring weak dims above.",
     "3) Never claim still-stuck unless THIS clip clearly shows the same fault.",
     "4) Update coach_summary from THIS session's objective outcome.",
